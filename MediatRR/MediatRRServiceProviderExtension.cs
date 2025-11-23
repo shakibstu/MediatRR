@@ -4,37 +4,43 @@ using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Concurrent;
 using System.Linq;
-using System.Xml;
 using Void = MediatRR.Contract.Messaging.Void;
 
 namespace MediatRR
 {
+    /// <summary>
+    /// Extension methods for registering MediatRR services with the dependency injection container.
+    /// </summary>
     public static class MediatRRServiceProviderExtension
-    {    
+    {
         /// <summary>
-        /// Registers handlers and mediator types from the specified assemblies
+        /// Registers MediatRR services with the service collection using a configuration action and dead letter queue.
         /// </summary>
-        /// <param name="services">Service collection</param>
-        /// <param name="configuration">The action used to configure the options</param>
-        /// <returns>Service collection</returns>
-        public static IServiceCollection AddMediatRR(this IServiceCollection services,
-            Action<MediatRRConfiguration> configuration)
+        /// <param name="services">The service collection to add services to</param>
+        /// <param name="configuration">Action to configure MediatRR options</param>
+        /// <param name="deadLetters">Queue to store failed notifications that exceeded retry attempts</param>
+        /// <returns>The service collection for method chaining</returns>
+        public static IServiceCollection AddMediatRR(this IServiceCollection services, Action<MediatRRConfiguration> configuration, ConcurrentQueue<DeadLettersInfo> deadLetters)
         {
-            var serviceConfig = new MediatRRConfiguration { NotificationChannelSize = 10_000 };
+            // Initialize with default configuration values
+            var serviceConfig = new MediatRRConfiguration { NotificationChannelSize = 10_000, MaxConcurrentMessageConsumer = 5 };
 
+            // Apply user configuration
             configuration.Invoke(serviceConfig);
+
+            // Register the dead letter queue
+            services.AddSingleton(new InternalDeadLettersKeeper { DeadLettersQueue = deadLetters });
 
             return services.AddMediatRR(serviceConfig);
         }
 
         /// <summary>
-        /// Registers handlers and mediator types from the specified assemblies
+        /// Registers core MediatRR services with the service collection.
         /// </summary>
-        /// <param name="services">Service collection</param>
-        /// <param name="configuration">Configuration options</param>
-        /// <returns>Service collection</returns>
-        public static IServiceCollection AddMediatRR(this IServiceCollection services,
-            MediatRRConfiguration configuration)
+        /// <param name="services">The service collection to add services to</param>
+        /// <param name="configuration">MediatRR configuration options</param>
+        /// <returns>The service collection for method chaining</returns>
+        public static IServiceCollection AddMediatRR(this IServiceCollection services, MediatRRConfiguration configuration)
         {
             services.AddTransient<IMediator, Mediator>();
             services.AddSingleton<NotificationChannel>();
@@ -43,10 +49,21 @@ namespace MediatRR
             return services;
         }
 
-        public static IServiceCollection AddNotificationHandler<T,THandler>(this IServiceCollection services, NotificationRetryPolicy notificationRetryPolicy)
-            where THandler: class, INotificationHandler<T> where T : INotification
+        /// <summary>
+        /// Registers a notification handler with an optional retry policy.
+        /// </summary>
+        /// <typeparam name="T">The notification type</typeparam>
+        /// <typeparam name="THandler">The handler implementation type</typeparam>
+        /// <param name="services">The service collection to add services to</param>
+        /// <param name="notificationRetryPolicy">Retry policy for this notification type. If null, uses default policy.</param>
+        /// <returns>The service collection for method chaining</returns>
+        public static IServiceCollection AddNotificationHandler<T, THandler>(this IServiceCollection services, NotificationRetryPolicy notificationRetryPolicy)
+            where THandler : class, INotificationHandler<T> where T : INotification
         {
+            // Register the handler
             services.AddTransient<INotificationHandler<T>, THandler>();
+            
+            // Get or create the retry policy dictionary
             ConcurrentDictionary<Type, NotificationRetryPolicy> dictionary;
 
             var descriptor = services.FirstOrDefault(d =>
@@ -63,16 +80,34 @@ namespace MediatRR
                 services.AddSingleton(dictionary);
             }
 
-            dictionary.TryAdd(typeof(T), notificationRetryPolicy);
+            // Add retry policy for this notification type
+            dictionary.TryAdd(typeof(T), notificationRetryPolicy ?? new NotificationRetryPolicy());
 
             return services;
         }
-        public static IServiceCollection AddRequestHandler<T,TResponse, THandler>(this IServiceCollection services)
+
+        /// <summary>
+        /// Registers a request handler that returns a response.
+        /// </summary>
+        /// <typeparam name="T">The request type</typeparam>
+        /// <typeparam name="TResponse">The response type</typeparam>
+        /// <typeparam name="THandler">The handler implementation type</typeparam>
+        /// <param name="services">The service collection to add services to</param>
+        /// <returns>The service collection for method chaining</returns>
+        public static IServiceCollection AddRequestHandler<T, TResponse, THandler>(this IServiceCollection services)
             where THandler : class, IRequestHandler<T, TResponse> where T : IRequest<TResponse>
         {
-            services.AddTransient<IRequestHandler<T,TResponse>, THandler>();
+            services.AddTransient<IRequestHandler<T, TResponse>, THandler>();
             return services;
         }
+
+        /// <summary>
+        /// Registers a request handler that does not return a response (returns Void).
+        /// </summary>
+        /// <typeparam name="T">The request type</typeparam>
+        /// <typeparam name="THandler">The handler implementation type</typeparam>
+        /// <param name="services">The service collection to add services to</param>
+        /// <returns>The service collection for method chaining</returns>
         public static IServiceCollection AddRequestHandler<T, THandler>(this IServiceCollection services)
             where THandler : class, IRequestHandler<T, Void> where T : IRequest<Void>
         {

@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using System;
-using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Collections.Concurrent;
 
 namespace MediatRR.TestApp.Controllers
 {
@@ -9,6 +8,7 @@ namespace MediatRR.TestApp.Controllers
     public class WeatherForecastController : ControllerBase
     {
         private readonly IMediator _mediator;
+        private readonly ConcurrentQueue<DeadLettersInfo> _concurrentQueue;
 
         private static readonly string[] Summaries = new[]
         {
@@ -16,9 +16,10 @@ namespace MediatRR.TestApp.Controllers
         };
 
 
-        public WeatherForecastController(IMediator mediator)
+        public WeatherForecastController(IMediator mediator, ConcurrentQueue<DeadLettersInfo> concurrentQueue)
         {
             _mediator = mediator;
+            _concurrentQueue = concurrentQueue;
         }
 
         [HttpGet]

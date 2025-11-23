@@ -12,4 +12,8 @@
   <ItemGroup>
     <ProjectReference Include="..\MediatRR.Contract\MediatRR.Contract.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MediatRR.Tests" />
+  </ItemGroup>
 </Project>
