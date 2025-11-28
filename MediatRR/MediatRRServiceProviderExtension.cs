@@ -26,7 +26,7 @@ namespace MediatRR
             var serviceConfig = new MediatRRConfiguration { NotificationChannelSize = 10_000, MaxConcurrentMessageConsumer = 5 };
 
             // Apply user configuration
-            configuration.Invoke(serviceConfig);
+            configuration?.Invoke(serviceConfig);
 
             // Register the dead letter queue
             services.AddSingleton(new InternalDeadLettersKeeper { DeadLettersQueue = deadLetters });
@@ -46,6 +46,7 @@ namespace MediatRR
             services.AddSingleton<NotificationChannel>();
             services.AddSingleton<IHostedService, HandleNotificationsWorker>();
             services.AddSingleton(configuration);
+            services.AddSingleton<NotificationResiliencyProvider>();
             return services;
         }
 
@@ -61,28 +62,13 @@ namespace MediatRR
             where THandler : class, INotificationHandler<T> where T : INotification
         {
             // Register the handler
-            services.AddTransient<INotificationHandler<T>, THandler>();
+            services.AddTransient<INotificationHandler<T>>(a =>
+            {
+                var resiliencies = a.GetRequiredService<NotificationResiliencyProvider>();
+                resiliencies.SetResiliencyPolicy(typeof(T), notificationRetryPolicy ?? new NotificationRetryPolicy());
+                return ActivatorUtilities.CreateInstance<THandler>(a);
+            });
             
-            // Get or create the retry policy dictionary
-            ConcurrentDictionary<Type, NotificationRetryPolicy> dictionary;
-
-            var descriptor = services.FirstOrDefault(d =>
-                d.ServiceType == typeof(ConcurrentDictionary<Type, NotificationRetryPolicy>));
-
-            if (descriptor?.ImplementationInstance is ConcurrentDictionary<Type, NotificationRetryPolicy> existingDict)
-            {
-                dictionary = existingDict;
-            }
-            else
-            {
-                // Create and register if it doesn't exist
-                dictionary = new ConcurrentDictionary<Type, NotificationRetryPolicy>();
-                services.AddSingleton(dictionary);
-            }
-
-            // Add retry policy for this notification type
-            dictionary.TryAdd(typeof(T), notificationRetryPolicy ?? new NotificationRetryPolicy());
-
             return services;
         }
 
@@ -114,5 +100,7 @@ namespace MediatRR
             services.AddRequestHandler<T, Void, THandler>();
             return services;
         }
+
+
     }
 }

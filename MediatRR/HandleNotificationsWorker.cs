@@ -13,7 +13,7 @@ namespace MediatRR
     /// Background service that processes notifications from the notification channel.
     /// Handles retry logic and dead letter queue management for failed notifications.
     /// </summary>
-    internal class HandleNotificationsWorker(NotificationChannel notificationChannel, ConcurrentDictionary<Type, NotificationRetryPolicy> notificationRetryPolicies, MediatRRConfiguration configuration, InternalDeadLettersKeeper deadLettersKeeper, IServiceProvider serviceProvider)
+    internal sealed class HandleNotificationsWorker(NotificationChannel notificationChannel, NotificationResiliencyProvider resiliencyProvider, MediatRRConfiguration configuration, InternalDeadLettersKeeper deadLettersKeeper, IServiceProvider serviceProvider)
         : BackgroundService
     {
         private readonly SemaphoreSlim _semaphore = new(configuration.MaxConcurrentMessageConsumer);
@@ -46,7 +46,7 @@ namespace MediatRR
                 // Get notification handler behaviors for this notification type
                 var behaviorType = typeof(INotificationHandlerBehavior<>).MakeGenericType(enumerator.Current.Type);
                 var behaviors = serviceProvider.GetServices(behaviorType);
-                var retryPolicy = notificationRetryPolicies[enumerator.Current.Type];
+                var retryPolicy = resiliencyProvider.GetResiliencyPolicy(enumerator.Current.Type);
 
                 // Build the pipeline by wrapping behaviors around the consume method
                 var response = behaviors.Reverse()
@@ -105,7 +105,7 @@ namespace MediatRR
                 }
 
                 // Increment retry count and re-queue the notification
-                context.RetriedCount += 1;
+                context.IncreaseRetry();
                 await Task.Delay(retryPolicy.DelayBetweenRetries, stoppingToken);
                 await notificationChannel.AddToChannel(context, stoppingToken);
             }

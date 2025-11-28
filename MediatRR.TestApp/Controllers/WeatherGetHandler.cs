@@ -10,4 +10,13 @@ namespace MediatRR.TestApp.Controllers
             throw new NotImplementedException();
         }
     }
+
+    public class WeatherGetHandler1 : IRequestHandler<WeatherForecast,object>
+    {
+
+        public Task<object> Handle(WeatherForecast notification, CancellationToken cancellationToken)
+        {
+            throw new NotImplementedException();
+        }
+    }
 }

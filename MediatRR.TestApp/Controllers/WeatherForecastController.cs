@@ -1,8 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Concurrent;
 
-namespace MediatRR.TestApp.Controllers
-{
+namespace MediatRR.TestApp.Controllers;
+
+
     [ApiController]
     [Route("[controller]")]
     public class WeatherForecastController : ControllerBase
@@ -26,7 +27,7 @@ namespace MediatRR.TestApp.Controllers
         public async Task<IEnumerable<WeatherForecast>> Get()
         {
             var rng = new Random();
-            await _mediator.Publish(new WeatherForecast
+            await _mediator.Send(new WeatherForecast
             {
                 Date = DateTime.Now.AddDays(1),
                 TemperatureC = rng.Next(-20, 55),
@@ -42,4 +43,3 @@ namespace MediatRR.TestApp.Controllers
         }
 
     }
-}

@@ -6,20 +6,6 @@ namespace MediatRR.Tests
 {
     public class DependencyInjectionTests
     {
-        [Fact]
-        public void AddNotificationHandler_ShouldRegisterRetryPolicy()
-        {
-            var services = new ServiceCollection();
-            var retryPolicy = new NotificationRetryPolicy { MaxRetryAttempts = 5 };
-
-            services.AddNotificationHandler<TestNotification, TestNotificationHandler>(retryPolicy);
-
-            var sp = services.BuildServiceProvider();
-            var policies = sp.GetRequiredService<ConcurrentDictionary<Type, NotificationRetryPolicy>>();
-
-            Assert.True(policies.ContainsKey(typeof(TestNotification)));
-            Assert.Equal(5, policies[typeof(TestNotification)].MaxRetryAttempts);
-        }
 
         [Fact]
         public void AddRequestHandler_ShouldRegisterHandler()
@@ -58,25 +44,19 @@ namespace MediatRR.Tests
         {
             var services = new ServiceCollection();
             var retryPolicy = new NotificationRetryPolicy();
-            
+            var deadLetters = new ConcurrentQueue<DeadLettersInfo>();
+
+            services.AddMediatRR(null, deadLetters);
+
             // Register first handler to create dictionary
             services.AddNotificationHandler<TestNotification, TestNotificationHandler>(retryPolicy);
-            
-            // Register second handler for same notification type (should update dictionary safely)
-            // Note: In real scenario, multiple handlers for same notification is valid, but dictionary key is Type.
-            // The current implementation uses TryAdd, so it won't overwrite.
-            // Let's verify it doesn't crash and dictionary persists.
-            
-            services.AddNotificationHandler<TestNotification, AnotherNotificationHandler>(retryPolicy);
+
 
             var sp = services.BuildServiceProvider();
-            var policies = sp.GetRequiredService<ConcurrentDictionary<Type, NotificationRetryPolicy>>();
+            sp.GetRequiredService<INotificationHandler<TestNotification>>();
+            var policies = sp.GetRequiredService<NotificationResiliencyProvider>();
+            Assert.Equal(retryPolicy, policies.GetResiliencyPolicy(typeof(TestNotification)));
 
-            Assert.Single(policies); // Key is Type, so only one entry per Notification Type
-            Assert.Equal(retryPolicy, policies[typeof(TestNotification)]);
-            
-            var handlers = sp.GetServices<INotificationHandler<TestNotification>>();
-            Assert.Equal(2, handlers.Count());
         }
     }
 

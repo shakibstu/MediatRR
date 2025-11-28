@@ -9,12 +9,12 @@
         /// Gets or sets the maximum number of notifications that can be queued in the notification channel.
         /// Default is 10,000.
         /// </summary>
-        public int NotificationChannelSize { get; set; }
-        
+        public int NotificationChannelSize { get; set; } = 10_000;
+
         /// <summary>
         /// Gets or sets the maximum number of concurrent notification handlers that can execute simultaneously.
         /// Default is 5.
         /// </summary>
-        public int MaxConcurrentMessageConsumer { get; set; }
+        public int MaxConcurrentMessageConsumer { get; set; } = 5;
     }
 }

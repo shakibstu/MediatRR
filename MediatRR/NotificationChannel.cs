@@ -10,7 +10,7 @@ namespace MediatRR
     /// Internal channel for queuing and processing notifications asynchronously.
     /// Uses a bounded channel to manage notification flow.
     /// </summary>
-    internal class NotificationChannel
+    internal sealed class NotificationChannel
     {
         private readonly Channel<NotificationPublishContext> _channel;
 

@@ -1,5 +1,6 @@
 using MediatRR.TestApp.Controllers;
 using System.Collections.Concurrent;
+using MediatRR.ServiceGenerator;
 
 namespace MediatRR.TestApp
 {
@@ -12,7 +13,7 @@ namespace MediatRR.TestApp
             // Add services to the container.
             var c = new ConcurrentQueue<DeadLettersInfo>();
             builder.Services.AddControllers();
-            builder.Services.AddNotificationHandler<WeatherForecast, WeatherGetHandler>(null);
+            builder.Services.AutoRegisterRequestHandlers();
             builder.Services.AddMediatRR(a => a.NotificationChannelSize = 100, c);
             builder.Services.AddSingleton(c);
             var app = builder.Build();

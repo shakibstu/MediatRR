@@ -11,7 +11,7 @@ namespace MediatRR;
 /// Internal implementation of the mediator pattern.
 /// Handles request/response and publish/subscribe messaging patterns.
 /// </summary>
-internal class Mediator(IServiceProvider serviceProvider) : IMediator
+internal sealed class Mediator(IServiceProvider serviceProvider) : IMediator
 {
     /// <summary>
     /// Sends a request to its handler and returns the response.

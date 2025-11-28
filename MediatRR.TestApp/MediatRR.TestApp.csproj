@@ -2,11 +2,16 @@
 
   <PropertyGroup>
     <TargetFramework>net8.0</TargetFramework>
-    <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
+    <UserSecretsId>0b4e51d5-9b50-43cb-b565-1e801d19933b</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MediatRR\MediatRR.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MediatRR.SG\MediatRR.SG.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>
