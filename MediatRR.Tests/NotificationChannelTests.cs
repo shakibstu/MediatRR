@@ -25,9 +25,8 @@ namespace MediatRR.Tests
 
             Assert.Equal(1, channel.Count);
 
-            var enumerator = channel.ReadFromChannel(CancellationToken.None).GetAsyncEnumerator();
-            Assert.True(await enumerator.MoveNextAsync());
-            Assert.Equal(notification, enumerator.Current.Message);
+            var enumerator = await channel.ReadFromChannel(CancellationToken.None);
+            Assert.Equal(notification, enumerator.Message);
         }
     }
 }

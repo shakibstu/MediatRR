@@ -13,11 +13,11 @@ namespace MediatRR
     /// Background service that processes notifications from the notification channel.
     /// Handles retry logic and dead letter queue management for failed notifications.
     /// </summary>
-    internal sealed class HandleNotificationsWorker(NotificationChannel notificationChannel, NotificationResiliencyProvider resiliencyProvider, MediatRRConfiguration configuration, InternalDeadLettersKeeper deadLettersKeeper, IServiceProvider serviceProvider)
+    internal sealed class HandleNotificationsWorker(NotificationChannel notificationChannel, NotificationResiliencyProvider resiliencyProvider, MediatRRConfiguration configuration, InternalDeadLettersKeeper deadLettersKeeper, IServiceScopeFactory scopeFactory)
         : BackgroundService
     {
         private readonly SemaphoreSlim _semaphore = new(configuration.MaxConcurrentMessageConsumer);
-        private const string HandlerName = nameof(INotificationHandler<>.Handle);
+        private const string HandlerName = nameof(INotificationHandler<INotification>.Handle);
         private readonly ConcurrentDictionary<Guid, Task> _runningTasks = new();
         private readonly CancellationTokenSource _drainCts = new();
 
@@ -29,14 +29,18 @@ namespace MediatRR
             // Use a linked token that combines app shutdown and our drain token
             // This allows graceful shutdown where we finish processing queued messages
             using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _drainCts.Token);
-            var result = notificationChannel.ReadFromChannel(linkedCts.Token);
-            var enumerator = result.GetAsyncEnumerator(linkedCts.Token);
-            
-            while (await enumerator.MoveNextAsync())
+
+            while (!stoppingToken.IsCancellationRequested)
             {
+                var result = await notificationChannel.ReadFromChannel(linkedCts.Token);
+                // Create a scope for this message processing
+                using var scope = scopeFactory.CreateScope();
+
+                var scopedProvider = scope.ServiceProvider;
+
                 // Resolve the handler for this notification type
-                var notificationHandlerType = typeof(INotificationHandler<>).MakeGenericType(enumerator.Current.Type);
-                var handler = serviceProvider.GetService(notificationHandlerType);
+                var notificationHandlerType = typeof(INotificationHandler<>).MakeGenericType(result.Type);
+                var handler = scopedProvider.GetService(notificationHandlerType);
 
                 if (handler == null)
                 {
@@ -44,36 +48,38 @@ namespace MediatRR
                 }
 
                 // Get notification handler behaviors for this notification type
-                var behaviorType = typeof(INotificationHandlerBehavior<>).MakeGenericType(enumerator.Current.Type);
-                var behaviors = serviceProvider.GetServices(behaviorType);
-                var retryPolicy = resiliencyProvider.GetResiliencyPolicy(enumerator.Current.Type);
+                var behaviorType = typeof(INotificationHandlerBehavior<>).MakeGenericType(result.Type);
+                var behaviors = scopedProvider.GetServices(behaviorType);
+                var retryPolicy = resiliencyProvider.GetResiliencyPolicy(result.Type);
 
                 // Build the pipeline by wrapping behaviors around the consume method
+                // We need to pass the scope to Consume so it can be disposed when the task finishes
                 var response = behaviors.Reverse()
-                    .Aggregate(() => Consume(enumerator.Current, retryPolicy, handler, stoppingToken),
+                    .Aggregate(() => Consume(result, retryPolicy, handler, stoppingToken),
                         (next, behavior) => () =>
                             (Task)behavior.GetType()
-                                .GetMethod(nameof(INotificationHandlerBehavior<>.Handle))!
-                                .Invoke(behavior, [enumerator.Current.Message, next, stoppingToken])).Invoke();
+                                .GetMethod(nameof(INotificationHandlerBehavior<INotification>.Handle))!
+                                .Invoke(behavior, [result.Message, next, stoppingToken])).Invoke();
 
                 // Track the task and cleanup completed ones
                 _runningTasks.TryAdd(Guid.NewGuid(), response);
                 CleanupCompletedTasks();
-                
-                // Small delay to prevent tight loop
-                await Task.Delay(TimeSpan.FromMilliseconds(100), CancellationToken.None);
             }
         }
-        
+
         /// <summary>
         /// Removes completed tasks from the running tasks dictionary to prevent memory leaks.
         /// </summary>
         private void CleanupCompletedTasks()
         {
-            var completed = _runningTasks.Where(t => t.Value.IsCompleted).ToList();
-            foreach (var task in completed)
+            // Only cleanup occasionally or if we have a lot of tasks to avoid iterating too often
+            if (_runningTasks.Count > 100)
             {
-                _runningTasks.TryRemove(task);
+                var completed = _runningTasks.Where(t => t.Value.IsCompleted).Select(t => t.Key).ToList();
+                foreach (var key in completed)
+                {
+                    _runningTasks.TryRemove(key, out _);
+                }
             }
         }
 
@@ -84,11 +90,18 @@ namespace MediatRR
         /// </summary>
         private async Task Consume(NotificationPublishContext context, NotificationRetryPolicy retryPolicy, object handler, CancellationToken stoppingToken)
         {
+            var semaphoreAcquired = false;
             try
             {
                 // Acquire semaphore to limit concurrent handler executions
-                await _semaphore.WaitAsync(TimeSpan.FromSeconds(30), stoppingToken);
-                
+                if (!await _semaphore.WaitAsync(TimeSpan.FromMinutes(1), stoppingToken))
+                {
+                    // Timeout acquiring semaphore. 
+                    // We treat this as a failure to process, so we can retry or DLQ.
+                    throw new TimeoutException("Timed out waiting for concurrency semaphore");
+                }
+                semaphoreAcquired = true;
+
                 // Invoke the handler's Handle method using reflection
                 await ((Task)handler!.GetType().GetMethod(HandlerName)!.Invoke(handler,
                     [context.Message, stoppingToken]))!;
@@ -111,10 +124,13 @@ namespace MediatRR
             }
             finally
             {
-                _semaphore.Release();
+                if (semaphoreAcquired)
+                {
+                    _semaphore.Release();
+                }
             }
         }
-        
+
         /// <summary>
         /// Gracefully stops the worker by ensuring all queued notifications are processed.
         /// </summary>
@@ -122,22 +138,22 @@ namespace MediatRR
         {
             // Stop accepting new messages
             notificationChannel.Stop();
-            
+
             // Wait for channel to be drained (all messages picked up by ExecuteAsync)
             while (notificationChannel.Count > 0)
             {
                 await Task.Delay(TimeSpan.FromMilliseconds(50), stoppingToken);
             }
-            
+
             // Now cancel the drain token to stop the ExecuteAsync loop
-            await _drainCts.CancelAsync();
-            
+            _drainCts.Cancel();
+
             // Wait for ExecuteAsync to finish
             await base.StopAsync(stoppingToken);
-            
+
             // Wait for all spawned handler tasks to complete
             await Task.WhenAll(_runningTasks.Values);
-            
+
             _semaphore.Dispose();
             _drainCts.Dispose();
         }

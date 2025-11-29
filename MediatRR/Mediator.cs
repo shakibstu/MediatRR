@@ -11,7 +11,7 @@ namespace MediatRR;
 /// Internal implementation of the mediator pattern.
 /// Handles request/response and publish/subscribe messaging patterns.
 /// </summary>
-internal sealed class Mediator(IServiceProvider serviceProvider) : IMediator
+internal sealed class Mediator(NotificationChannel notificationChannel, IServiceScopeFactory scopeFactory) : IMediator
 {
     /// <summary>
     /// Sends a request to its handler and returns the response.
@@ -21,7 +21,10 @@ internal sealed class Mediator(IServiceProvider serviceProvider) : IMediator
         // Resolve the handler type for this request
         var handlerType = typeof(IRequestHandler<,>).MakeGenericType(request.GetType(), typeof(TResponse));
 
-        var handler = serviceProvider.GetService(handlerType);
+        // Create a scope for this request
+        using var scope = scopeFactory.CreateScope();
+
+        var handler = scope.ServiceProvider.GetService(handlerType);
 
         if (handler == null)
         {
@@ -29,7 +32,7 @@ internal sealed class Mediator(IServiceProvider serviceProvider) : IMediator
         }
         
         // Invoke the Handle method on the handler using reflection
-        const string handleName = nameof(IRequestHandler<,>.Handle);
+        const string handleName = nameof(IRequestHandler<IRequest<TResponse>, TResponse>.Handle);
         return await ((Task<TResponse>)handler.GetType().GetMethod(handleName)!.Invoke(
             handler, [request, cancellationToken]))!;
     }
@@ -39,10 +42,13 @@ internal sealed class Mediator(IServiceProvider serviceProvider) : IMediator
     /// </summary>
     private ValueTask PublishToChannel<TNotification>(TNotification notification, CancellationToken cancellationToken = default) where TNotification : INotification
     {
+        // Create a scope for this request
+        using var scope = scopeFactory.CreateScope();
+        var handlerType = typeof(INotificationHandler<>).MakeGenericType(notification.GetType());
         // Only add to channel if there's at least one handler registered
-        return serviceProvider.GetService<INotificationHandler<TNotification>>() != null
-            ? serviceProvider.GetRequiredService<NotificationChannel>().AddToChannel(notification, cancellationToken)
-            : ValueTask.CompletedTask;
+        return scope.ServiceProvider.GetService(handlerType) != null
+            ? notificationChannel.AddToChannel(notification, cancellationToken)
+            : new ValueTask(Task.CompletedTask);
     }
 
     /// <inheritdoc />
@@ -58,14 +64,18 @@ internal sealed class Mediator(IServiceProvider serviceProvider) : IMediator
     {
         // Get all registered pipeline behaviors for this request type
         var behaviorType = typeof(IPipelineBehavior<,>).MakeGenericType(request.GetType(), typeof(TResponse));
-        var behaviors = serviceProvider.GetServices(behaviorType);
+
+        // Create a scope for this request
+        using var scope = scopeFactory.CreateScope();
+
+        var behaviors = scope.ServiceProvider.GetServices(behaviorType);
 
         // Build the pipeline by wrapping each behavior around the next
         var response = behaviors.Reverse()
             .Aggregate(handler,
                 (next, behavior) => () =>
                     (Task<TResponse>)behavior.GetType()
-                        .GetMethod(nameof(IPipelineBehavior<,>.Handle))!
+                        .GetMethod(nameof(IPipelineBehavior<TRequest, TResponse>.Handle))!
                         .Invoke(behavior, [request, next, cancellationToken])).Invoke();
         return await response;
     }
@@ -77,14 +87,15 @@ internal sealed class Mediator(IServiceProvider serviceProvider) : IMediator
     {
         // Get all registered notification behaviors for this notification type
         var behaviorType = typeof(INotificationBehavior<>).MakeGenericType(request.GetType());
-        var behaviors = serviceProvider.GetServices(behaviorType);
+        using var scope = scopeFactory.CreateScope();
+        var behaviors = scope.ServiceProvider.GetServices(behaviorType);
 
         // Build the pipeline by wrapping each behavior around the next
         var response = behaviors.Reverse()
             .Aggregate(handler,
                 (next, behavior) => () =>
                     (Task)behavior.GetType()
-                        .GetMethod(nameof(INotificationBehavior<>.Handle))!
+                        .GetMethod(nameof(INotificationBehavior<INotification>.Handle))!
                         .Invoke(behavior, [request, next, cancellationToken])).Invoke();
         await response;
     }

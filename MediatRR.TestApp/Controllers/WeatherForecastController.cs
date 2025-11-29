@@ -27,7 +27,7 @@ namespace MediatRR.TestApp.Controllers;
         public async Task<IEnumerable<WeatherForecast>> Get()
         {
             var rng = new Random();
-            await _mediator.Send(new WeatherForecast
+            await _mediator.Publish(new WeatherForecast
             {
                 Date = DateTime.Now.AddDays(1),
                 TemperatureC = rng.Next(-20, 55),

@@ -12,6 +12,6 @@ namespace MediatRR
         /// <summary>
         /// Gets or initializes the queue containing failed notifications.
         /// </summary>
-        public ConcurrentQueue<DeadLettersInfo> DeadLettersQueue { get; init; }
+        public ConcurrentQueue<DeadLettersInfo> DeadLettersQueue { get; set; }
     }
 }

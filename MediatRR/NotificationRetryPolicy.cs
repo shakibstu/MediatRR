@@ -20,3 +20,6 @@ namespace MediatRR
         public TimeSpan DelayBetweenRetries { get; init; } = TimeSpan.FromSeconds(1);
     }
 }
+namespace System.Runtime.CompilerServices
+{
+}

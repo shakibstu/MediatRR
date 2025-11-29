@@ -1,9 +1,10 @@
-﻿using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
-using System.Diagnostics;
+﻿using System.Diagnostics;
+using System.Linq;
 using System.Text;
+using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 
-namespace MediatRR.SG
+namespace MediatRR
 {
     [Generator]
     public class RegisterRequestHandlers : IIncrementalGenerator
@@ -11,6 +12,9 @@ namespace MediatRR.SG
         private const string RequestHandlerInterface = "MediatRR.Contract.Messaging.IRequestHandler<,>";
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
+//#if DEBUG
+//            Debugger.Launch();
+//#endif
             var template = new StringBuilder(@"
                              namespace MediatRR.ServiceGenerator;
                              using Microsoft.Extensions.DependencyInjection;
@@ -75,11 +79,6 @@ namespace MediatRR.SG
             }
 
             if (!symbol.TypeArguments.Any() || !withSpecificationOfGeneric)
-            {
-                return symbol.ConstructUnboundGenericType().ToString();
-            }
-
-            if (!symbol.TypeArguments.All(a => a.TypeKind is TypeKind.Class or TypeKind.Interface))
             {
                 return symbol.ConstructUnboundGenericType().ToString();
             }

@@ -58,9 +58,9 @@ namespace MediatRR
         /// </summary>
         /// <param name="cancellationToken">Cancellation token</param>
         /// <returns>An async enumerable of notification contexts</returns>
-        public IAsyncEnumerable<NotificationPublishContext> ReadFromChannel(CancellationToken cancellationToken)
+        public async ValueTask<NotificationPublishContext> ReadFromChannel(CancellationToken cancellationToken)
         {
-            return _channel.Reader.ReadAllAsync(cancellationToken);
+            return await _channel.Reader.ReadAsync(cancellationToken);
         }
 
         /// <summary>

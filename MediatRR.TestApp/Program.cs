@@ -14,6 +14,7 @@ namespace MediatRR.TestApp
             var c = new ConcurrentQueue<DeadLettersInfo>();
             builder.Services.AddControllers();
             builder.Services.AutoRegisterRequestHandlers();
+            builder.Services.AddNotificationHandler<WeatherForecast, WeatherGetHandler>(null);
             builder.Services.AddMediatRR(a => a.NotificationChannelSize = 100, c);
             builder.Services.AddSingleton(c);
             var app = builder.Build();
