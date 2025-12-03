@@ -1,11 +1,6 @@
 using MediatRR.Contract.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using System;
-using System.Collections.Concurrent;
-using System.Threading;
-using System.Threading.Tasks;
-using Xunit;
 
 namespace MediatRR.Tests
 {
@@ -34,7 +29,7 @@ namespace MediatRR.Tests
             // T=500: 2 finish, 2 start
             // T=1000: 2 finish, 1 starts
             // T=1500: 1 finishes
-            
+
             ConcurrentHandler.ActiveHandlers = 0;
             ConcurrentHandler.MaxActiveHandlers = 0;
 
@@ -43,7 +38,7 @@ namespace MediatRR.Tests
             {
                 tasks[i] = mediator.Publish(new ConcurrentNotification());
             }
-            
+
             await Task.WhenAll(tasks);
 
             // Wait for all to complete

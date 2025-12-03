@@ -3,7 +3,6 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Concurrent;
-using System.Linq;
 using Void = MediatRR.Contract.Messaging.Void;
 
 namespace MediatRR
@@ -68,7 +67,7 @@ namespace MediatRR
                 resiliencies.SetResiliencyPolicy(typeof(T), notificationRetryPolicy ?? new NotificationRetryPolicy());
                 return ActivatorUtilities.CreateInstance<THandler>(a);
             });
-            
+
             return services;
         }
 

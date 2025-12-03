@@ -3,13 +3,15 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.14.36623.8
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR", "MediatRR\MediatRR.csproj", "{78E5C046-4649-4948-BAF6-40960E5869E8}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR", "src\MediatRR\MediatRR.csproj", "{78E5C046-4649-4948-BAF6-40960E5869E8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR.Contract", "MediatRR.Contract\MediatRR.Contract.csproj", "{B1EC9D23-47C9-415A-BCE3-9B8083FAC86C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR.Contract", "src\MediatRR.Contract\MediatRR.Contract.csproj", "{B1EC9D23-47C9-415A-BCE3-9B8083FAC86C}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR.TestApp", "MediatRR.TestApp\MediatRR.TestApp.csproj", "{027FD9C9-4985-415F-90DB-8ED9939461E2}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR.TestApp", "tests\MediatRR.TestApp\MediatRR.TestApp.csproj", "{027FD9C9-4985-415F-90DB-8ED9939461E2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR.Tests", "MediatRR.Tests\MediatRR.Tests.csproj", "{66CFDE77-13A8-4D1B-A82D-4123AB8D9EB3}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR.Tests", "tests\MediatRR.Tests\MediatRR.Tests.csproj", "{66CFDE77-13A8-4D1B-A82D-4123AB8D9EB3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR.Documentation.Examples", "tests\MediatRR.Documentation.Examples\MediatRR.Documentation.Examples.csproj", "{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -69,6 +71,18 @@ Global
 		{66CFDE77-13A8-4D1B-A82D-4123AB8D9EB3}.Release|x64.Build.0 = Release|Any CPU
 		{66CFDE77-13A8-4D1B-A82D-4123AB8D9EB3}.Release|x86.ActiveCfg = Release|Any CPU
 		{66CFDE77-13A8-4D1B-A82D-4123AB8D9EB3}.Release|x86.Build.0 = Release|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Debug|x64.Build.0 = Debug|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Debug|x86.Build.0 = Debug|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Release|x64.ActiveCfg = Release|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Release|x64.Build.0 = Release|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Release|x86.ActiveCfg = Release|Any CPU
+		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

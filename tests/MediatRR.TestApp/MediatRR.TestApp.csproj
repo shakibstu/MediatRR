@@ -9,7 +9,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\MediatRR.Contract\MediatRR.Contract.csproj" />
-    <ProjectReference Include="..\MediatRR\MediatRR.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true" />
+    <ProjectReference Include="..\..\src\MediatRR\MediatRR.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true"  />
   </ItemGroup>
 </Project>

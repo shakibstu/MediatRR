@@ -30,7 +30,7 @@ internal sealed class Mediator(NotificationChannel notificationChannel, IService
         {
             throw new ArgumentException($"No Handler Defined for {request.GetType()}");
         }
-        
+
         // Invoke the Handle method on the handler using reflection
         const string handleName = nameof(IRequestHandler<IRequest<TResponse>, TResponse>.Handle);
         return await ((Task<TResponse>)handler.GetType().GetMethod(handleName)!.Invoke(
@@ -79,7 +79,7 @@ internal sealed class Mediator(NotificationChannel notificationChannel, IService
                         .Invoke(behavior, [request, next, cancellationToken])).Invoke();
         return await response;
     }
-    
+
     /// <summary>
     /// Executes the notification through the notification behaviors before publishing to the channel.
     /// </summary>

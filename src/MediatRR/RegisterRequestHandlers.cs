@@ -1,8 +1,7 @@
-﻿using System.Diagnostics;
+﻿using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System.Linq;
 using System.Text;
-using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp.Syntax;
 
 namespace MediatRR
 {
@@ -12,9 +11,9 @@ namespace MediatRR
         private const string RequestHandlerInterface = "MediatRR.Contract.Messaging.IRequestHandler<,>";
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
-//#if DEBUG
-//            Debugger.Launch();
-//#endif
+            //#if DEBUG
+            //            Debugger.Launch();
+            //#endif
             var template = new StringBuilder(@"
                              namespace MediatRR.ServiceGenerator;
                              using Microsoft.Extensions.DependencyInjection;

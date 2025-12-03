@@ -20,8 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\MediatRR\MediatRR.csproj" />
-    <ProjectReference Include="..\MediatRR.Contract\MediatRR.Contract.csproj" />
+    <ProjectReference Include="..\..\src\MediatRR\MediatRR.csproj" />
   </ItemGroup>
 
 </Project>

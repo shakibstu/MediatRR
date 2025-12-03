@@ -38,31 +38,37 @@ namespace MediatRR
 
                 var scopedProvider = scope.ServiceProvider;
 
-                // Resolve the handler for this notification type
+                // Resolve all handlers for this notification type
                 var notificationHandlerType = typeof(INotificationHandler<>).MakeGenericType(result.Type);
-                var handler = scopedProvider.GetService(notificationHandlerType);
+                var handlers = scopedProvider.GetServices(notificationHandlerType).ToList();
 
-                if (handler == null)
+                if (handlers.Count == 0)
                 {
-                    continue; // Skip if no handler is registered
+                    continue; // Skip if no handlers are registered
                 }
 
                 // Get notification handler behaviors for this notification type
                 var behaviorType = typeof(INotificationHandlerBehavior<>).MakeGenericType(result.Type);
-                var behaviors = scopedProvider.GetServices(behaviorType);
+                var behaviors = scopedProvider.GetServices(behaviorType).ToList();
                 var retryPolicy = resiliencyProvider.GetResiliencyPolicy(result.Type);
 
-                // Build the pipeline by wrapping behaviors around the consume method
-                // We need to pass the scope to Consume so it can be disposed when the task finishes
-                var response = behaviors.Reverse()
-                    .Aggregate(() => Consume(result, retryPolicy, handler, stoppingToken),
-                        (next, behavior) => () =>
-                            (Task)behavior.GetType()
-                                .GetMethod(nameof(INotificationHandlerBehavior<INotification>.Handle))!
-                                .Invoke(behavior, [result.Message, next, stoppingToken])).Invoke();
+                // Process each handler
+                foreach (var handler in handlers)
+                {
+                    behaviors.Reverse();
 
-                // Track the task and cleanup completed ones
-                _runningTasks.TryAdd(Guid.NewGuid(), response);
+                    // Build the pipeline by wrapping behaviors around the consume method for each handler
+                    var response = behaviors
+                        .Aggregate(() => Consume(result, retryPolicy, handler, stoppingToken),
+                            (next, behavior) => () =>
+                                (Task)behavior.GetType()
+                                    .GetMethod(nameof(INotificationHandlerBehavior<INotification>.Handle))!
+                                    .Invoke(behavior, [result.Message, next, stoppingToken])).Invoke();
+
+                    // Track the task and cleanup completed ones
+                    _runningTasks.TryAdd(Guid.NewGuid(), response);
+                }
+
                 CleanupCompletedTasks();
             }
         }

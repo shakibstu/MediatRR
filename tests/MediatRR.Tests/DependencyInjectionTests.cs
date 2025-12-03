@@ -25,8 +25,8 @@ namespace MediatRR.Tests
         {
             var services = new ServiceCollection();
             var deadLetters = new ConcurrentQueue<DeadLettersInfo>();
-            
-            services.AddMediatRR(cfg => 
+
+            services.AddMediatRR(cfg =>
             {
                 cfg.NotificationChannelSize = 500;
                 cfg.MaxConcurrentMessageConsumer = 10;

@@ -7,15 +7,22 @@
 
     <!-- Package metadata -->
     <PackageId>MediatRR</PackageId>
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
     <Authors>Shakib Loveimi</Authors>
     <Description>An Always Free Mediator! Enjoy!</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>mediator;request;response;queries;commands;notifications</PackageTags>
+    <PackageIcon>mediatrr.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://mediatrr.tech</PackageProjectUrl>
 
     <!-- Include the DLL as both runtime library and analyzer -->
     <IncludeBuildOutput>true</IncludeBuildOutput>
   </PropertyGroup>
-
+  <ItemGroup>
+    <None Include="..\..\assets\mediatrr.png" Pack="true" PackagePath="" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="System.Threading.Channels" Version="8.0.0" />
@@ -30,7 +37,7 @@
   <ItemGroup>
     <ProjectReference Include="..\MediatRR.Contract\MediatRR.Contract.csproj" />
   </ItemGroup>
-
+ 
   <ItemGroup>
     <InternalsVisibleTo Include="MediatRR.Tests" />
   </ItemGroup>

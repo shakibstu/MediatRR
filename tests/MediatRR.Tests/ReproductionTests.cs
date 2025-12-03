@@ -1,10 +1,6 @@
 using MediatRR.Contract.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using System;
-using System.Threading;
-using System.Threading.Tasks;
-using Xunit;
 
 namespace MediatRR.Tests
 {
@@ -17,10 +13,10 @@ namespace MediatRR.Tests
             var services = new ServiceCollection();
             services.AddMediatRR(new MediatRRConfiguration());
             services.AddSingleton(new InternalDeadLettersKeeper());
-            
+
             // Register a scoped service
             services.AddScoped<IScopedService, ScopedService>();
-            
+
             // Register a handler that depends on the scoped service
             services.AddNotificationHandler<TestNotification, ScopedHandler>(null);
 

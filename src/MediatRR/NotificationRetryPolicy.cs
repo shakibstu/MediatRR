@@ -9,17 +9,12 @@ namespace MediatRR
     {
         /// <summary>
         /// Gets or initializes the maximum number of retry attempts for a failed notification handler.
-        /// Default is 3.
         /// </summary>
-        public int MaxRetryAttempts { get; init; } = 3;
+        public int MaxRetryAttempts { get; init; }
 
         /// <summary>
         /// Gets or initializes the delay between retry attempts.
-        /// Default is 1 second.
         /// </summary>
-        public TimeSpan DelayBetweenRetries { get; init; } = TimeSpan.FromSeconds(1);
+        public TimeSpan DelayBetweenRetries { get; init; } = TimeSpan.Zero;
     }
-}
-namespace System.Runtime.CompilerServices
-{
 }

@@ -1,6 +1,6 @@
+using MediatRR.ServiceGenerator;
 using MediatRR.TestApp.Controllers;
 using System.Collections.Concurrent;
-using MediatRR.ServiceGenerator;
 
 namespace MediatRR.TestApp
 {
@@ -15,6 +15,7 @@ namespace MediatRR.TestApp
             builder.Services.AddControllers();
             builder.Services.AutoRegisterRequestHandlers();
             builder.Services.AddNotificationHandler<WeatherForecast, WeatherGetHandler>(null);
+            builder.Services.AddNotificationHandler<WeatherForecast, WeatherGetHandler1>(null);
             builder.Services.AddMediatRR(a => a.NotificationChannelSize = 100, c);
             builder.Services.AddSingleton(c);
             var app = builder.Build();

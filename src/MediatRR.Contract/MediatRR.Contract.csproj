@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <Features>strict</Features>
+    <PackageTags>mediator;request;response;queries;commands;notifications</PackageTags>
+    <LangVersion>latest</LangVersion>
+    <PackageId>MediatRR.Contract</PackageId>
+    <Version>1.0.5</Version>
+    <Authors>Shakib Loveimi</Authors>
+    <Description>An Always Free Mediator! Enjoy!</Description>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageIcon>mediatrr.png</PackageIcon>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://mediatrr.tech</PackageProjectUrl>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="..\..\assets\mediatrr.png" Pack="true" PackagePath="" />
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+</Project>
