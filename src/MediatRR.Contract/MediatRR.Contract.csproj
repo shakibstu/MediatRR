@@ -6,7 +6,7 @@
     <PackageTags>mediator;request;response;queries;commands;notifications</PackageTags>
     <LangVersion>latest</LangVersion>
     <PackageId>MediatRR.Contract</PackageId>
-    <Version>1.0.5</Version>
+    <Version>1.0.6</Version>
     <Authors>Shakib Loveimi</Authors>
     <Description>An Always Free Mediator! Enjoy!</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
