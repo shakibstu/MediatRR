@@ -13,6 +13,7 @@
     <PackageIcon>mediatrr.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageProjectUrl>https://mediatrr.tech</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/shakibstu/MediatRR</RepositoryUrl>
   </PropertyGroup>
   <ItemGroup>
     <None Include="..\..\assets\mediatrr.png" Pack="true" PackagePath="" />
