@@ -7,7 +7,7 @@
 
     <!-- Package metadata -->
     <PackageId>MediatRR</PackageId>
-    <Version>1.0.7</Version>
+    <Version>1.0.8</Version>
     <Authors>Shakib Loveimi</Authors>
     <Description>An Always Free Mediator! Enjoy!</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
