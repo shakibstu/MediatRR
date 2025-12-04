@@ -14,6 +14,8 @@
     <PackageTags>mediator;request;response;queries;commands;notifications</PackageTags>
     <PackageIcon>mediatrr.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+
+
     <PackageProjectUrl>https://mediatrr.tech</PackageProjectUrl>
 
     <!-- Include the DLL as both runtime library and analyzer -->
