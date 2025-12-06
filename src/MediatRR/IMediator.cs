@@ -1,4 +1,5 @@
-﻿using MediatRR.Contract.Messaging;
+﻿using System.Collections.Generic;
+using MediatRR.Contract.Messaging;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -26,4 +27,14 @@ public interface IMediator
     /// <returns>A task that represents the publish operation.</returns>
     Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
         where TNotification : INotification;
+
+    /// <summary>
+    /// send a stream request to a single handler
+    /// </summary>
+    /// <typeparam name="TResponse">Response type</typeparam>
+    /// <param name="request">Request object</param>
+    /// <param name="cancellationToken">Optional cancellation token</param>
+    /// <returns>An IAsyncEnumerable with response type</returns>
+    IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request,
+        CancellationToken cancellationToken = default);
 }
