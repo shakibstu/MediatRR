@@ -33,6 +33,16 @@ public class WeatherForecastController : ControllerBase
             TemperatureC = rng.Next(-20, 55),
             Summary = Summaries[rng.Next(Summaries.Length)]
         });
+        var response = _mediator.CreateStream(new WeatherForecast
+        {
+            Date = DateTime.Now.AddDays(1),
+            TemperatureC = rng.Next(-20, 55),
+            Summary = Summaries[rng.Next(Summaries.Length)]
+        });
+        await foreach (var count in response)
+        {
+            Console.WriteLine(count);
+        }
         return Enumerable.Range(1, 5).Select(index => new WeatherForecast
         {
             Date = DateTime.Now.AddDays(index),

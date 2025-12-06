@@ -87,6 +87,21 @@ namespace MediatRR
         }
 
         /// <summary>
+        /// Registers a request handler that returns a response.
+        /// </summary>
+        /// <typeparam name="T">The request type</typeparam>
+        /// <typeparam name="TResponse">The response type</typeparam>
+        /// <typeparam name="THandler">The handler implementation type</typeparam>
+        /// <param name="services">The service collection to add services to</param>
+        /// <returns>The service collection for method chaining</returns>
+        public static IServiceCollection AddStreamRequestHandler<T, TResponse, THandler>(this IServiceCollection services)
+            where THandler : class, IStreamRequestHandler<T, TResponse> where T : IStreamRequest<TResponse>
+        {
+            services.AddTransient<IStreamRequestHandler<T, TResponse>, THandler>();
+            return services;
+        }
+
+        /// <summary>
         /// Registers a request handler that does not return a response (returns Void).
         /// </summary>
         /// <typeparam name="T">The request type</typeparam>

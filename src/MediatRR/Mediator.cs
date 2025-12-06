@@ -1,6 +1,7 @@
 ﻿using MediatRR.Contract.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -36,6 +37,31 @@ internal sealed class Mediator(NotificationChannel notificationChannel, IService
         return await ((Task<TResponse>)handler.GetType().GetMethod(handleName)!.Invoke(
             handler, [request, cancellationToken]))!;
     }
+
+    /// <summary>
+    /// Sends a request to its handler and returns the response.
+    /// </summary>
+    private IAsyncEnumerable<TResponse> CreateStreamWithResponse<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        // Resolve the handler type for this request
+        var handlerType = typeof(IStreamRequestHandler<,>).MakeGenericType(request.GetType(), typeof(TResponse));
+
+        // Create a scope for this request
+        using var scope = scopeFactory.CreateScope();
+
+        var handler = scope.ServiceProvider.GetService(handlerType);
+
+        if (handler == null)
+        {
+            throw new ArgumentException($"No Handler Defined for {request.GetType()}");
+        }
+
+        // Invoke the Handle method on the handler using reflection
+        const string handleName = nameof(IStreamRequestHandler<IStreamRequest<TResponse>, TResponse>.Handle);
+        return ((IAsyncEnumerable<TResponse>)handler.GetType().GetMethod(handleName)!.Invoke(
+            handler, [request, cancellationToken]))!;
+    }
+
 
     /// <summary>
     /// Publishes a notification to the notification channel if a handler exists.
@@ -113,5 +139,29 @@ internal sealed class Mediator(NotificationChannel notificationChannel, IService
             return PublishToChannel(notification, cancellationToken).AsTask();
         }
 
+    }
+
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {        
+        // Get all registered pipeline behaviors for this request type
+        var behaviorType = typeof(IStreamBehavior<,>).MakeGenericType(request.GetType(), typeof(TResponse));
+
+        // Create a scope for this request
+        using var scope = scopeFactory.CreateScope();
+
+        var behaviors = scope.ServiceProvider.GetServices(behaviorType);
+
+        IAsyncEnumerable<TResponse> Handler() => CreateStreamWithResponse(request, cancellationToken);
+        // Build the pipeline by wrapping each behavior around the next
+        var response = behaviors.Reverse()
+            .Aggregate((Func<IAsyncEnumerable<TResponse>>)Handler,
+                (next, behavior) => () =>
+                {
+                    var result = (IAsyncEnumerable<TResponse>)behavior.GetType()
+                        .GetMethod(nameof(IStreamBehavior<IStreamRequest<TResponse>, TResponse>.Handle))!
+                        .Invoke(behavior, [request, next, cancellationToken]);
+                    return result;
+                }).Invoke();
+        return response;
     }
 }

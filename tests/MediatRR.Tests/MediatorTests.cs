@@ -16,6 +16,7 @@ namespace MediatRR.Tests
             var deadLetters = new ConcurrentQueue<DeadLettersInfo>();
             services.AddMediatRR(cfg => { }, deadLetters);
             services.AddRequestHandler<TestRequest, string, TestRequestHandler>();
+            services.AddStreamRequestHandler<TestStreamRequest, string, TestStreamRequestHandler>();
 
             _serviceProvider = services.BuildServiceProvider();
             _mediator = _serviceProvider.GetRequiredService<IMediator>();
@@ -42,6 +43,20 @@ namespace MediatRR.Tests
             var notification = new TestNotification { Message = "Event" };
             await _mediator.Publish(notification);
         }
+
+        [Fact]
+        public async Task CreateStream_ShouldReturnItems_WhenHandlerExists()
+        {
+            var request = new TestStreamRequest { Message = "Stream" };
+            var stream = _mediator.CreateStream(request);
+            var items = new List<string>();
+            await foreach (var item in stream)
+            {
+                items.Add(item);
+            }
+            
+            Assert.Equal(new[] { "Stream 1", "Stream 2", "Stream 3" }, items);
+        }
     }
 
     public class TestRequest : IRequest<string>
@@ -62,5 +77,21 @@ namespace MediatRR.Tests
     public class TestNotification : INotification
     {
         public string Message { get; set; }
+    }
+
+    public class TestStreamRequest : IStreamRequest<string>
+    {
+        public string Message { get; set; }
+    }
+
+    public class TestStreamRequestHandler : IStreamRequestHandler<TestStreamRequest, string>
+    {
+        public async IAsyncEnumerable<string> Handle(TestStreamRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+        {
+            yield return request.Message + " 1";
+            yield return request.Message + " 2";
+            yield return request.Message + " 3";
+            await Task.CompletedTask;
+        }
     }
 }

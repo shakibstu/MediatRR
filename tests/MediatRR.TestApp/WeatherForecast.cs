@@ -2,7 +2,7 @@ using MediatRR.Contract.Messaging;
 
 namespace MediatRR.TestApp
 {
-    public class WeatherForecast : INotification, IRequest<object>
+    public class WeatherForecast : INotification, IRequest<object>, IStreamRequest<object>
     {
         public DateTime Date { get; set; }
 

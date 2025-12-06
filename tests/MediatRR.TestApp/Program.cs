@@ -13,7 +13,7 @@ namespace MediatRR.TestApp
             // Add services to the container.
             var c = new ConcurrentQueue<DeadLettersInfo>();
             builder.Services.AddControllers();
-            builder.Services.AutoRegisterRequestHandlers();
+            builder.Services.AutoRegisterRequestHandlers().AutoRegisterStreamHandlers();
             builder.Services.AddNotificationHandler<WeatherForecast, WeatherGetHandler>(null);
             builder.Services.AddNotificationHandler<WeatherForecast, WeatherGetHandler1>(null);
             builder.Services.AddMediatRR(a => a.NotificationChannelSize = 100, c);

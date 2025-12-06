@@ -53,6 +53,33 @@ namespace MediatRR.Tests
             Assert.Equal(new[] { "NA Before", "NB Before", "NB After", "NA After" }, log);
         }
 
+        [Fact]
+        public async Task StreamBehavior_ShouldRunInOrder()
+        {
+            var services = new ServiceCollection();
+            var deadLetters = new ConcurrentQueue<DeadLettersInfo>();
+            services.AddMediatRR(cfg => { }, deadLetters);
+
+            services.AddSingleton<List<string>>();
+            services.AddTransient(typeof(IStreamBehavior<,>), typeof(StreamBehaviorA<,>));
+            services.AddTransient(typeof(IStreamBehavior<,>), typeof(StreamBehaviorB<,>));
+            services.AddStreamRequestHandler<TestStreamRequest, string, StreamBehaviorTestRequestHandler>();
+
+            var sp = services.BuildServiceProvider();
+            var mediator = sp.GetRequiredService<IMediator>();
+            var log = sp.GetRequiredService<List<string>>();
+
+            var stream = mediator.CreateStream(new TestStreamRequest { Message = "Stream" });
+            var items = new List<string>();
+            await foreach (var item in stream)
+            {
+                items.Add(item);
+            }
+
+            Assert.Equal(new[] { "SA Before", "SB Before", "SB After", "SA After" }, log);
+            Assert.Equal(new[] { "Stream 1", "Stream 2" }, items);
+        }
+
         public class BehaviorA<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse> where TRequest : IRequest<TResponse>
         {
             private readonly List<string> _log;
@@ -107,6 +134,40 @@ namespace MediatRR.Tests
             }
         }
 
+        public class StreamBehaviorA<TRequest, TResponse> : IStreamBehavior<TRequest, TResponse> where TRequest : notnull
+        {
+            private readonly List<string> _log;
+            public StreamBehaviorA(List<string> log) => _log = log;
+
+            public async IAsyncEnumerable<TResponse> Handle(TRequest request, Func<IAsyncEnumerable<TResponse>> next, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+            {
+                _log.Add("SA Before");
+                var stream = next();
+                await foreach (var item in stream)
+                {
+                    yield return item;
+                }
+                _log.Add("SA After");
+            }
+        }
+
+        public class StreamBehaviorB<TRequest, TResponse> : IStreamBehavior<TRequest, TResponse> where TRequest : notnull
+        {
+            private readonly List<string> _log;
+            public StreamBehaviorB(List<string> log) => _log = log;
+
+            public async IAsyncEnumerable<TResponse> Handle(TRequest request, Func<IAsyncEnumerable<TResponse>> next, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken)
+            {
+                _log.Add("SB Before");
+                var stream = next();
+                await foreach (var item in stream)
+                {
+                    yield return item;
+                }
+                _log.Add("SB After");
+            }
+        }
+
         // Reusing TestRequest/Handler from MediatorTests context if possible, but defining here for isolation or using shared if public.
         // Since they are in the same namespace, we can reuse if they are public.
         // Assuming TestRequest and TestRequestHandler are available from MediatorTests.cs (they were public).
@@ -122,6 +183,24 @@ namespace MediatRR.Tests
             {
                 _log.Add("Handled");
                 return Task.FromResult("Result");
+            }
+        }
+
+        public class TestStreamRequest : IStreamRequest<string>
+        {
+            public string Message { get; set; }
+        }
+
+        public class StreamBehaviorTestRequestHandler : IStreamRequestHandler<TestStreamRequest, string>
+        {
+            private readonly List<string> _log;
+            public StreamBehaviorTestRequestHandler(List<string> log) => _log = log;
+
+            public async IAsyncEnumerable<string> Handle(TestStreamRequest request, [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+            {
+                yield return request.Message + " 1";
+                yield return request.Message + " 2";
+                await Task.CompletedTask;
             }
         }
     }

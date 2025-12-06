@@ -5,6 +5,7 @@ MediatRR is a powerful mediator pattern implementation for .NET applications. It
 ## Key Features
 
 - **Request/Response Pattern**: Send requests and get typed responses
+- **Streams**: Support for IAsyncEnumerable streams
 - **Notifications**: Publish events to multiple handlers
 - **Pipeline Behaviors**: Add cross-cutting concerns like logging, validation, and caching
 - **Background Workers**: Process notifications asynchronously
@@ -104,6 +105,75 @@ Use the `IMediator` interface to send your request.
 var mediator = provider.GetRequiredService<IMediator>();
 var response = await mediator.Send(new Ping { Message = "Hello" });
 // response = "Hello Pong"
+```
+
+
+
+## Streams
+
+MediatRR supports `IAsyncEnumerable` streams, allowing you to stream data from your handlers.
+
+### Defining a Stream Request
+
+Create a class that implements `IStreamRequest<TResponse>`:
+
+```csharp
+public class StreamData : IStreamRequest<int>
+{
+    public int Count { get; set; }
+}
+```
+
+### Creating a Stream Handler
+
+Implement `IStreamRequestHandler<TRequest, TResponse>` to handle your stream request:
+
+```csharp
+public class StreamDataHandler : IStreamRequestHandler<StreamData, int>
+{
+    public async IAsyncEnumerable<int> Handle(StreamData request, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        for (int i = 0; i < request.Count; i++)
+        {
+            await Task.Delay(100, cancellationToken);
+            yield return i;
+        }
+    }
+}
+```
+
+### Registering Stream Handlers
+
+You can register handlers manually or use the auto-registration feature.
+
+#### Manual Registration
+
+```csharp
+services.AddStreamRequestHandler<StreamData, int, StreamDataHandler>();
+```
+
+#### Auto-Registration
+
+MediatRR includes a source generator that can automatically register your stream handlers. This requires importing the generated namespace:
+
+```csharp
+using MediatRR.ServiceGenerator;
+
+// Registers all stream handlers in the assembly
+services.AutoRegisterStreamHandlers();
+```
+
+### Consuming the Stream
+
+Use the `CreateStream` method on the `IMediator` interface:
+
+```csharp
+var request = new StreamData { Count = 5 };
+
+await foreach (var item in mediator.CreateStream(request))
+{
+    Console.WriteLine($"Received: {item}");
+}
 ```
 
 ## Notifications
@@ -233,6 +303,34 @@ public class NotificationHandlerLoggingBehavior<TNotification> : INotificationHa
 // Register behaviors
 services.AddTransient(typeof(INotificationBehavior<>), typeof(NotificationLoggingBehavior<>));
 services.AddTransient(typeof(INotificationHandlerBehavior<>), typeof(NotificationHandlerLoggingBehavior<>));
+```
+
+### Stream Behaviors
+
+Stream behaviors wrap around stream request handlers, allowing you to intercept the stream creation or iterate the results.
+
+```csharp
+public class StreamLoggingBehavior<TRequest, TResponse> : IStreamBehavior<TRequest, TResponse>
+    where TRequest : notnull
+{
+    public async IAsyncEnumerable<TResponse> Handle(TRequest request, Func<IAsyncEnumerable<TResponse>> next, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        Console.WriteLine($"[Stream Log] Starting stream for {typeof(TRequest).Name}");
+        
+        var stream = next();
+        
+        await foreach (var item in stream.WithCancellation(cancellationToken))
+        {
+            Console.WriteLine($"[Stream Log] Received item: {item}");
+            yield return item;
+        }
+        
+        Console.WriteLine($"[Stream Log] Completed stream for {typeof(TRequest).Name}");
+    }
+}
+
+// Register the behavior
+services.AddTransient(typeof(IStreamBehavior<,>), typeof(StreamLoggingBehavior<,>));
 ```
 
 ## ASP.NET Core Integration
