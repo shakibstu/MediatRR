@@ -44,7 +44,7 @@ namespace MediatRR.Contract.Messaging
         ///  - Zero: This instance occurs in the same position in the sort order as <paramref name="obj" />.
         ///  - Greater than zero: This instance follows <paramref name="obj" /> in the sort order.
         /// </returns>
-        int IComparable.CompareTo(object obj) => 0;
+        int IComparable.CompareTo(object obj) => obj is null ? 1 : 0;
 
         /// <summary>
         /// Returns a hash code for this instance.

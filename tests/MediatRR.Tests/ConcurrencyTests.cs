@@ -13,7 +13,7 @@ namespace MediatRR.Tests
             var services = new ServiceCollection();
             // Set concurrency to 2
             services.AddMediatRR(new MediatRRConfiguration { MaxConcurrentMessageConsumer = 2 });
-            services.AddSingleton(new InternalDeadLettersKeeper());
+            services.AddSingleton(new InternalDeadLettersKeeper(new System.Collections.Concurrent.ConcurrentQueue<DeadLettersInfo>()));
             services.AddNotificationHandler<ConcurrentNotification, ConcurrentHandler>(null);
 
             var sp = services.BuildServiceProvider();

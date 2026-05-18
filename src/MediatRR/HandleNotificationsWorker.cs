@@ -1,132 +1,127 @@
-﻿using MediatRR.Contract.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 
 namespace MediatRR
 {
     /// <summary>
     /// Background service that processes notifications from the notification channel.
-    /// Handles retry logic and dead letter queue management for failed notifications.
     /// </summary>
-    internal sealed class HandleNotificationsWorker(NotificationChannel notificationChannel, NotificationResiliencyProvider resiliencyProvider, MediatRRConfiguration configuration, InternalDeadLettersKeeper deadLettersKeeper, IServiceScopeFactory scopeFactory)
-        : BackgroundService
+    internal sealed class HandleNotificationsWorker(
+        NotificationChannel notificationChannel,
+        NotificationResiliencyProvider resiliencyProvider,
+        MediatRRConfiguration configuration,
+        InternalDeadLettersKeeper deadLettersKeeper,
+        IServiceScopeFactory scopeFactory) : BackgroundService
     {
         private readonly SemaphoreSlim _semaphore = new(configuration.MaxConcurrentMessageConsumer);
-        private const string HandlerName = nameof(INotificationHandler<INotification>.Handle);
         private readonly ConcurrentDictionary<Guid, Task> _runningTasks = new();
-        private readonly CancellationTokenSource _drainCts = new();
 
-        /// <summary>
-        /// Main execution loop that reads notifications from the channel and processes them.
-        /// </summary>
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            // Use a linked token that combines app shutdown and our drain token
-            // This allows graceful shutdown where we finish processing queued messages
-            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken, _drainCts.Token);
-
-            while (!stoppingToken.IsCancellationRequested)
+            while (true)
             {
-                var result = await notificationChannel.ReadFromChannel(linkedCts.Token);
-                // Create a scope for this message processing
-                using var scope = scopeFactory.CreateScope();
-
-                var scopedProvider = scope.ServiceProvider;
-
-                // Resolve all handlers for this notification type
-                var notificationHandlerType = typeof(INotificationHandler<>).MakeGenericType(result.Type);
-                var handlers = scopedProvider.GetServices(notificationHandlerType).ToList();
-
-                if (handlers.Count == 0)
+                NotificationPublishContext context;
+                try
                 {
-                    continue; // Skip if no handlers are registered
+                    context = await notificationChannel.ReadFromChannel(stoppingToken).ConfigureAwait(false);
+                }
+                catch (ChannelClosedException)
+                {
+                    // Writer was completed and the channel is drained — clean exit.
+                    break;
+                }
+                catch (OperationCanceledException)
+                {
+                    // Forced shutdown via stoppingToken — exit without further drain.
+                    break;
                 }
 
-                // Get notification handler behaviors for this notification type
-                var behaviorType = typeof(INotificationHandlerBehavior<>).MakeGenericType(result.Type);
-                var behaviors = scopedProvider.GetServices(behaviorType).ToList();
-                var retryPolicy = resiliencyProvider.GetResiliencyPolicy(result.Type);
-
-                // Process each handler
-                foreach (var handler in handlers)
-                {
-                    behaviors.Reverse();
-
-                    // Build the pipeline by wrapping behaviors around the consume method for each handler
-                    var response = behaviors
-                        .Aggregate(() => Consume(result, retryPolicy, handler, stoppingToken),
-                            (next, behavior) => () =>
-                                (Task)behavior.GetType()
-                                    .GetMethod(nameof(INotificationHandlerBehavior<INotification>.Handle))!
-                                    .Invoke(behavior, [result.Message, next, stoppingToken])).Invoke();
-
-                    // Track the task and cleanup completed ones
-                    _runningTasks.TryAdd(Guid.NewGuid(), response);
-                }
-
-                CleanupCompletedTasks();
+                DispatchToHandlers(context, stoppingToken);
             }
         }
 
-        /// <summary>
-        /// Removes completed tasks from the running tasks dictionary to prevent memory leaks.
-        /// </summary>
-        private void CleanupCompletedTasks()
+        private void DispatchToHandlers(NotificationPublishContext context, CancellationToken stoppingToken)
         {
-            // Only cleanup occasionally or if we have a lot of tasks to avoid iterating too often
-            if (_runningTasks.Count > 100)
+            using var scope = scopeFactory.CreateScope();
+            var sp = scope.ServiceProvider;
+
+            var handlers = sp.GetServices(HandlerCache.NotificationHandlerType(context.Type)).ToList();
+            if (handlers.Count == 0) return;
+
+            // Snapshot behaviors and pre-reverse ONCE before fanning out to handlers.
+            var behaviorsReversed = sp.GetServices(HandlerCache.NotificationHandlerBehaviorType(context.Type))
+                .Reverse()
+                .ToList();
+            var retryPolicy = resiliencyProvider.GetResiliencyPolicy(context.Type);
+
+            foreach (var handler in handlers)
             {
-                var completed = _runningTasks.Where(t => t.Value.IsCompleted).Select(t => t.Key).ToList();
-                foreach (var key in completed)
-                {
-                    _runningTasks.TryRemove(key, out _);
-                }
+                var pipeline = behaviorsReversed
+                    .Aggregate((Func<Task>)(() => Consume(context, retryPolicy, handler, stoppingToken)),
+                        (next, behavior) => () => HandlerCache.InvokeNotificationHandlerBehavior(behavior, context.Message, next, stoppingToken));
+
+                Track(pipeline());
             }
         }
 
+        private void Track(Task task)
+        {
+            var id = Guid.NewGuid();
+            _runningTasks[id] = task;
+            task.ContinueWith((t, state) =>
+            {
+                var (dict, key, dlq) = ((ConcurrentDictionary<Guid, Task>, Guid, InternalDeadLettersKeeper))state;
+                dict.TryRemove(key, out _);
+                if (t.IsFaulted)
+                {
+                    // Behavior threw outside Consume's catch; capture so it isn't unobserved.
+                    dlq.DeadLettersQueue.Enqueue(
+                        new DeadLettersInfo(null, t.Exception.GetBaseException(), 0, DateTime.UtcNow));
+                }
+            }, (_runningTasks, id, deadLettersKeeper), TaskContinuationOptions.ExecuteSynchronously);
+        }
 
-        /// <summary>
-        /// Consumes a notification by invoking its handler with retry logic.
-        /// If the handler fails after max retries, the notification is moved to the dead letter queue.
-        /// </summary>
         private async Task Consume(NotificationPublishContext context, NotificationRetryPolicy retryPolicy, object handler, CancellationToken stoppingToken)
         {
             var semaphoreAcquired = false;
             try
             {
-                // Acquire semaphore to limit concurrent handler executions
-                if (!await _semaphore.WaitAsync(TimeSpan.FromMinutes(1), stoppingToken))
+                if (!await _semaphore.WaitAsync(TimeSpan.FromMinutes(1), stoppingToken).ConfigureAwait(false))
                 {
-                    // Timeout acquiring semaphore. 
-                    // We treat this as a failure to process, so we can retry or DLQ.
                     throw new TimeoutException("Timed out waiting for concurrency semaphore");
                 }
                 semaphoreAcquired = true;
 
-                // Invoke the handler's Handle method using reflection
-                await ((Task)handler!.GetType().GetMethod(HandlerName)!.Invoke(handler,
-                    [context.Message, stoppingToken]))!;
+                await HandlerCache.InvokeNotificationHandler(handler, context.Message, stoppingToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                // Check if we've exceeded max retry attempts
+                // Release the semaphore BEFORE retry delay / re-enqueue so we don't starve other work.
+                if (semaphoreAcquired)
+                {
+                    _semaphore.Release();
+                    semaphoreAcquired = false;
+                }
+
                 if (context.RetriedCount >= retryPolicy.MaxRetryAttempts)
                 {
-                    // Move to dead letter queue
-                    deadLettersKeeper.DeadLettersQueue?.Enqueue(
+                    deadLettersKeeper.DeadLettersQueue.Enqueue(
                         new DeadLettersInfo(context.Message, ex, context.RetriedCount, DateTime.UtcNow));
                     return;
                 }
 
-                // Increment retry count and re-queue the notification
                 context.IncreaseRetry();
-                await Task.Delay(retryPolicy.DelayBetweenRetries, stoppingToken);
-                await notificationChannel.AddToChannel(context, stoppingToken);
+                if (retryPolicy.DelayBetweenRetries > TimeSpan.Zero)
+                {
+                    await Task.Delay(retryPolicy.DelayBetweenRetries, stoppingToken).ConfigureAwait(false);
+                }
+                await notificationChannel.AddToChannel(context, stoppingToken).ConfigureAwait(false);
             }
             finally
             {
@@ -137,31 +132,40 @@ namespace MediatRR
             }
         }
 
-        /// <summary>
-        /// Gracefully stops the worker by ensuring all queued notifications are processed.
-        /// </summary>
         public override async Task StopAsync(CancellationToken stoppingToken)
         {
-            // Stop accepting new messages
+            // Stop accepting new messages.
             notificationChannel.Stop();
 
-            // Wait for channel to be drained (all messages picked up by ExecuteAsync)
-            while (notificationChannel.Count > 0)
+            // Wait for the channel to drain naturally — ExecuteAsync keeps reading until the
+            // writer is completed AND the channel is empty. Channel.Reader.Completion captures
+            // that exact moment. We must wait for this BEFORE base.StopAsync cancels the
+            // stoppingToken, otherwise unread items get dropped.
+            try
             {
-                await Task.Delay(TimeSpan.FromMilliseconds(50), stoppingToken);
+                await notificationChannel.Completion.ConfigureAwait(false);
+            }
+            catch
+            {
+                // Completion can complete with an exception if writer.Complete(error) was used;
+                // we don't pass an error so this is defensive.
             }
 
-            // Now cancel the drain token to stop the ExecuteAsync loop
-            _drainCts.Cancel();
+            // Drain spawned handler tasks while the stoppingToken is still live so handlers
+            // can finish without being aborted.
+            try
+            {
+                await Task.WhenAll(_runningTasks.Values).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Individual task failures already routed to DLQ.
+            }
 
-            // Wait for ExecuteAsync to finish
-            await base.StopAsync(stoppingToken);
-
-            // Wait for all spawned handler tasks to complete
-            await Task.WhenAll(_runningTasks.Values);
+            // Now formally tear down the BackgroundService (cancels stoppingToken).
+            await base.StopAsync(stoppingToken).ConfigureAwait(false);
 
             _semaphore.Dispose();
-            _drainCts.Dispose();
         }
     }
 }

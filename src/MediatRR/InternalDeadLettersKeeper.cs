@@ -1,4 +1,4 @@
-﻿
+using System;
 using System.Collections.Concurrent;
 
 namespace MediatRR
@@ -9,9 +9,11 @@ namespace MediatRR
     /// </summary>
     internal sealed class InternalDeadLettersKeeper
     {
-        /// <summary>
-        /// Gets or initializes the queue containing failed notifications.
-        /// </summary>
-        public ConcurrentQueue<DeadLettersInfo> DeadLettersQueue { get; set; }
+        public InternalDeadLettersKeeper(ConcurrentQueue<DeadLettersInfo> queue)
+        {
+            DeadLettersQueue = queue ?? throw new ArgumentNullException(nameof(queue));
+        }
+
+        public ConcurrentQueue<DeadLettersInfo> DeadLettersQueue { get; }
     }
 }
