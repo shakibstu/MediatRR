@@ -12,7 +12,7 @@ namespace MediatRR.Tests
             // Arrange
             var services = new ServiceCollection();
             services.AddMediatRR(new MediatRRConfiguration());
-            services.AddSingleton(new InternalDeadLettersKeeper());
+            services.AddSingleton(new InternalDeadLettersKeeper(new System.Collections.Concurrent.ConcurrentQueue<DeadLettersInfo>()));
 
             // Register a scoped service
             services.AddScoped<IScopedService, ScopedService>();

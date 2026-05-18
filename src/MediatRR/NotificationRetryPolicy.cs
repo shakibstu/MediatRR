@@ -1,12 +1,17 @@
-﻿using System;
+using System;
 
 namespace MediatRR
 {
     /// <summary>
     /// Defines the retry policy for failed notification handlers.
     /// </summary>
-    public class NotificationRetryPolicy
+    public sealed class NotificationRetryPolicy
     {
+        /// <summary>
+        /// Default policy: zero retries, no delay.
+        /// </summary>
+        public static NotificationRetryPolicy Default { get; } = new NotificationRetryPolicy();
+
         /// <summary>
         /// Gets or initializes the maximum number of retry attempts for a failed notification handler.
         /// </summary>

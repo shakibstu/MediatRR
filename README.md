@@ -22,7 +22,7 @@ dotnet add package MediatRR
 
 ## Basic Setup
 
-Register MediatRR in your dependency injection container. The library requires a configuration action and a dead-letter queue for handling failed notifications.
+Register MediatRR in your dependency injection container. The library requires a configuration action and a non-null dead-letter queue for handling failed notifications.
 
 ```csharp
 using MediatRR;
@@ -43,6 +43,8 @@ services.AddMediatRR(cfg =>
 var provider = services.BuildServiceProvider();
 var mediator = provider.GetRequiredService<IMediator>();
 ```
+
+`IMediator` is registered as a singleton. Each `Send`, `Publish`, and `CreateStream` call opens its own DI scope so scoped dependencies (e.g. a per-request `DbContext`) work correctly; that scope is shared between pipeline behaviors and the handler. For `CreateStream` the scope lives until the returned `IAsyncEnumerable` is fully enumerated or its enumerator is disposed.
 
 ### Configuration Options
 
@@ -218,18 +220,23 @@ public class UpdateInventoryHandler : INotificationHandler<OrderPlaced>
 
 ### Registering Handlers
 
-Register your notification handlers with the DI container. You can optionally provide a retry policy:
+Register your notification handlers with the DI container. The retry policy is optional — omit it (or pass `null`) to use `NotificationRetryPolicy.Default` (zero retries, no delay):
 
 ```csharp
 var retryPolicy = new NotificationRetryPolicy
 {
     MaxRetryAttempts = 3,
-    RetryDelayMilliseconds = 1000
+    DelayBetweenRetries = TimeSpan.FromSeconds(1)
 };
 
 services.AddNotificationHandler<OrderPlaced, SendEmailHandler>(retryPolicy);
 services.AddNotificationHandler<OrderPlaced, UpdateInventoryHandler>(retryPolicy);
+
+// Or with no retry policy:
+services.AddNotificationHandler<OrderPlaced, AuditHandler>();
 ```
+
+> **One policy per notification type.** All handlers for the same notification share a single retry policy. Registering conflicting policies for the same notification type throws `InvalidOperationException` when the resiliency provider is resolved. Registering the same (or equivalent) policy multiple times is fine.
 
 ### Publishing Notifications
 

@@ -1,8 +1,9 @@
-﻿using MediatRR.Contract.Messaging;
+using MediatRR.Contract.Messaging;
 using Microsoft.Extensions.DependencyInjection;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -10,158 +11,88 @@ namespace MediatRR;
 
 /// <summary>
 /// Internal implementation of the mediator pattern.
-/// Handles request/response and publish/subscribe messaging patterns.
 /// </summary>
 internal sealed class Mediator(NotificationChannel notificationChannel, IServiceScopeFactory scopeFactory) : IMediator
 {
-    /// <summary>
-    /// Sends a request to its handler and returns the response.
-    /// </summary>
-    private async Task<TResponse> SendWithResponse<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
-    {
-        // Resolve the handler type for this request
-        var handlerType = typeof(IRequestHandler<,>).MakeGenericType(request.GetType(), typeof(TResponse));
-
-        // Create a scope for this request
-        using var scope = scopeFactory.CreateScope();
-
-        var handler = scope.ServiceProvider.GetService(handlerType);
-
-        if (handler == null)
-        {
-            throw new ArgumentException($"No Handler Defined for {request.GetType()}");
-        }
-
-        // Invoke the Handle method on the handler using reflection
-        const string handleName = nameof(IRequestHandler<IRequest<TResponse>, TResponse>.Handle);
-        return await ((Task<TResponse>)handler.GetType().GetMethod(handleName)!.Invoke(
-            handler, [request, cancellationToken]))!;
-    }
-
-    /// <summary>
-    /// Sends a request to its handler and returns the response.
-    /// </summary>
-    private IAsyncEnumerable<TResponse> CreateStreamWithResponse<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
-    {
-        // Resolve the handler type for this request
-        var handlerType = typeof(IStreamRequestHandler<,>).MakeGenericType(request.GetType(), typeof(TResponse));
-
-        // Create a scope for this request
-        using var scope = scopeFactory.CreateScope();
-
-        var handler = scope.ServiceProvider.GetService(handlerType);
-
-        if (handler == null)
-        {
-            throw new ArgumentException($"No Handler Defined for {request.GetType()}");
-        }
-
-        // Invoke the Handle method on the handler using reflection
-        const string handleName = nameof(IStreamRequestHandler<IStreamRequest<TResponse>, TResponse>.Handle);
-        return ((IAsyncEnumerable<TResponse>)handler.GetType().GetMethod(handleName)!.Invoke(
-            handler, [request, cancellationToken]))!;
-    }
-
-
-    /// <summary>
-    /// Publishes a notification to the notification channel if a handler exists.
-    /// </summary>
-    private ValueTask PublishToChannel<TNotification>(TNotification notification, CancellationToken cancellationToken = default) where TNotification : INotification
-    {
-        // Create a scope for this request
-        using var scope = scopeFactory.CreateScope();
-        var handlerType = typeof(INotificationHandler<>).MakeGenericType(notification.GetType());
-        // Only add to channel if there's at least one handler registered
-        return scope.ServiceProvider.GetService(handlerType) != null
-            ? notificationChannel.AddToChannel(notification, cancellationToken)
-            : new ValueTask(Task.CompletedTask);
-    }
-
-    /// <inheritdoc />
     public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
     {
-        return await Execute(request, () => SendWithResponse(request, cancellationToken), cancellationToken);
-    }
+        if (request is null) throw new ArgumentNullException(nameof(request));
 
-    /// <summary>
-    /// Executes the request through the pipeline behaviors before invoking the handler.
-    /// </summary>
-    private async Task<TResponse> Execute<TRequest, TResponse>(TRequest request, Func<Task<TResponse>> handler, CancellationToken cancellationToken = default)
-    {
-        // Get all registered pipeline behaviors for this request type
-        var behaviorType = typeof(IPipelineBehavior<,>).MakeGenericType(request.GetType(), typeof(TResponse));
-
-        // Create a scope for this request
         using var scope = scopeFactory.CreateScope();
+        var sp = scope.ServiceProvider;
+        var requestType = request.GetType();
 
-        var behaviors = scope.ServiceProvider.GetServices(behaviorType);
+        var behaviors = sp.GetServices(HandlerCache.PipelineBehaviorType(requestType, typeof(TResponse)));
 
-        // Build the pipeline by wrapping each behavior around the next
-        var response = behaviors.Reverse()
-            .Aggregate(handler,
-                (next, behavior) => () =>
-                    (Task<TResponse>)behavior.GetType()
-                        .GetMethod(nameof(IPipelineBehavior<TRequest, TResponse>.Handle))!
-                        .Invoke(behavior, [request, next, cancellationToken])).Invoke();
-        return await response;
+        Task<TResponse> InvokeHandler()
+        {
+            var handler = sp.GetService(HandlerCache.RequestHandlerType(requestType, typeof(TResponse)))
+                ?? throw new InvalidOperationException($"No handler registered for {requestType}.");
+            return HandlerCache.InvokeRequestHandler<TResponse>(handler, request, cancellationToken);
+        }
+
+        var pipeline = behaviors
+            .Reverse()
+            .Aggregate((Func<Task<TResponse>>)InvokeHandler,
+                (next, behavior) => () => HandlerCache.InvokePipelineBehavior<TResponse>(behavior, request, next, cancellationToken));
+
+        return await pipeline().ConfigureAwait(false);
     }
 
-    /// <summary>
-    /// Executes the notification through the notification behaviors before publishing to the channel.
-    /// </summary>
-    private async Task ExecuteNotification<TRequest>(TRequest request, Func<Task> handler, CancellationToken cancellationToken = default)
+    public async Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default)
+        where TNotification : INotification
     {
-        // Get all registered notification behaviors for this notification type
-        var behaviorType = typeof(INotificationBehavior<>).MakeGenericType(request.GetType());
+        if (notification is null) throw new ArgumentNullException(nameof(notification));
+
         using var scope = scopeFactory.CreateScope();
-        var behaviors = scope.ServiceProvider.GetServices(behaviorType);
+        var sp = scope.ServiceProvider;
+        var runtimeType = notification.GetType();
 
-        // Build the pipeline by wrapping each behavior around the next
-        var response = behaviors.Reverse()
-            .Aggregate(handler,
-                (next, behavior) => () =>
-                    (Task)behavior.GetType()
-                        .GetMethod(nameof(INotificationBehavior<INotification>.Handle))!
-                        .Invoke(behavior, [request, next, cancellationToken])).Invoke();
-        await response;
-    }
-
-    /// <inheritdoc />
-    public async Task Publish<TNotification>(TNotification notification,
-        CancellationToken cancellationToken = default) where TNotification : INotification
-    {
-        // Execute through notification behaviors, then publish to channel
-        await ExecuteNotification(notification, InternalPublish, cancellationToken);
-        return;
+        var behaviors = sp.GetServices(HandlerCache.NotificationBehaviorType(runtimeType));
 
         Task InternalPublish()
         {
-            return PublishToChannel(notification, cancellationToken).AsTask();
+            // Only enqueue if at least one handler is registered. Behaviors still run regardless.
+            var anyHandler = sp.GetService(HandlerCache.NotificationHandlerType(runtimeType)) != null;
+            if (!anyHandler) return Task.CompletedTask;
+            return notificationChannel.AddToChannel(new NotificationPublishContext(notification, runtimeType), cancellationToken).AsTask();
         }
 
+        var pipeline = behaviors
+            .Reverse()
+            .Aggregate((Func<Task>)InternalPublish,
+                (next, behavior) => () => HandlerCache.InvokeNotificationBehavior(behavior, notification, next, cancellationToken));
+
+        await pipeline().ConfigureAwait(false);
     }
 
-    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default)
-    {        
-        // Get all registered pipeline behaviors for this request type
-        var behaviorType = typeof(IStreamBehavior<,>).MakeGenericType(request.GetType(), typeof(TResponse));
+    public async IAsyncEnumerable<TResponse> CreateStream<TResponse>(
+        IStreamRequest<TResponse> request,
+        [EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        if (request is null) throw new ArgumentNullException(nameof(request));
 
-        // Create a scope for this request
         using var scope = scopeFactory.CreateScope();
+        var sp = scope.ServiceProvider;
+        var requestType = request.GetType();
 
-        var behaviors = scope.ServiceProvider.GetServices(behaviorType);
+        var behaviors = sp.GetServices(HandlerCache.StreamBehaviorType(requestType, typeof(TResponse)));
 
-        IAsyncEnumerable<TResponse> Handler() => CreateStreamWithResponse(request, cancellationToken);
-        // Build the pipeline by wrapping each behavior around the next
-        var response = behaviors.Reverse()
-            .Aggregate((Func<IAsyncEnumerable<TResponse>>)Handler,
-                (next, behavior) => () =>
-                {
-                    var result = (IAsyncEnumerable<TResponse>)behavior.GetType()
-                        .GetMethod(nameof(IStreamBehavior<IStreamRequest<TResponse>, TResponse>.Handle))!
-                        .Invoke(behavior, [request, next, cancellationToken]);
-                    return result;
-                }).Invoke();
-        return response;
+        IAsyncEnumerable<TResponse> InvokeHandler()
+        {
+            var handler = sp.GetService(HandlerCache.StreamRequestHandlerType(requestType, typeof(TResponse)))
+                ?? throw new InvalidOperationException($"No stream handler registered for {requestType}.");
+            return HandlerCache.InvokeStreamHandler<TResponse>(handler, request, cancellationToken);
+        }
+
+        var pipeline = behaviors
+            .Reverse()
+            .Aggregate((Func<IAsyncEnumerable<TResponse>>)InvokeHandler,
+                (next, behavior) => () => HandlerCache.InvokeStreamBehavior<TResponse>(behavior, request, next, cancellationToken));
+
+        await foreach (var item in pipeline().WithCancellation(cancellationToken).ConfigureAwait(false))
+        {
+            yield return item;
+        }
     }
 }

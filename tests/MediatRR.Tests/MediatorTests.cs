@@ -34,7 +34,7 @@ namespace MediatRR.Tests
         public async Task Send_ShouldThrowException_WhenNoHandlerExists()
         {
             var request = new UnhandledRequest();
-            await Assert.ThrowsAsync<ArgumentException>(() => _mediator.Send(request));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => _mediator.Send(request));
         }
 
         [Fact]
