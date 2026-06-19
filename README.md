@@ -50,7 +50,7 @@ var mediator = provider.GetRequiredService<IMediator>();
 
 The `AddMediatRR` method accepts a configuration action with the following options:
 
-- `NotificationChannelSize`: The size of the notification channel buffer (default: 100)
+- `NotificationChannelSize`: The size of the notification channel buffer (default: 10,000)
 - `MaxConcurrentMessageConsumer`: Maximum concurrent notification handlers (default: 5)
 
 ### Dead Letter Queue
