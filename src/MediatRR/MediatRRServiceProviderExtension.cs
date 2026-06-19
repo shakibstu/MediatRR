@@ -29,7 +29,7 @@ namespace MediatRR
             if (services is null) throw new ArgumentNullException(nameof(services));
             if (configuration is null) throw new ArgumentNullException(nameof(configuration));
 
-            services.AddSingleton<IMediator, Mediator>();
+            services.AddTransient<IMediator, Mediator>();
             services.AddSingleton<NotificationChannel>();
             services.AddSingleton<IHostedService, HandleNotificationsWorker>();
             services.AddSingleton(configuration);

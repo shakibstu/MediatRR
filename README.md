@@ -44,7 +44,7 @@ var provider = services.BuildServiceProvider();
 var mediator = provider.GetRequiredService<IMediator>();
 ```
 
-`IMediator` is registered as a singleton. `Send` and `CreateStream` each open their own DI scope — shared between the pipeline behaviors and the handler — so scoped dependencies (e.g. a per-request `DbContext`) work correctly. For `CreateStream` that scope lives until the returned `IAsyncEnumerable` is fully enumerated or its enumerator is disposed. `Publish` opens a scope for its notification behaviors and then queues the notification; each handler runs later in the background worker, in its own per-message scope.
+`IMediator` is registered as transient. `Send` and `CreateStream` each open their own DI scope — shared between the pipeline behaviors and the handler — so scoped dependencies (e.g. a per-request `DbContext`) work correctly. For `CreateStream` that scope lives until the returned `IAsyncEnumerable` is fully enumerated or its enumerator is disposed. `Publish` opens a scope for its notification behaviors and then queues the notification; each handler runs later in the background worker, in its own per-message scope.
 
 ### Configuration Options
 
