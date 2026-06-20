@@ -151,6 +151,22 @@ namespace MediatRR
                 // we don't pass an error so this is defensive.
             }
 
+            // ExecuteAsync reads a message and THEN registers its handler task in _runningTasks,
+            // so Completion (channel drained) can fire before the last message's task is tracked.
+            // Wait for the read loop to exit — it breaks on ChannelClosedException once the channel
+            // is completed and empty — so every dispatched handler is registered before we await them.
+            if (ExecuteTask is { } executeTask)
+            {
+                try
+                {
+                    await executeTask.ConfigureAwait(false);
+                }
+                catch
+                {
+                    // ExecuteAsync exits via ChannelClosedException/OperationCanceledException on drain.
+                }
+            }
+
             // Drain spawned handler tasks while the stoppingToken is still live so handlers
             // can finish without being aborted.
             try

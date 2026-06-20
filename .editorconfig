@@ -1,0 +1,33 @@
+root = true
+
+[*]
+indent_style = space
+charset = utf-8
+trim_trailing_whitespace = true
+insert_final_newline = true
+
+[*.cs]
+indent_size = 4
+# Namespaces / usings
+csharp_using_directive_placement = outside_namespace:suggestion
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+# Prefer 'var' when the type is apparent
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_for_built_in_types = false:suggestion
+# Expression-bodied members
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+# Modern language features
+csharp_prefer_braces = true:suggestion
+csharp_style_namespace_declarations = file_scoped:suggestion
+# Quality: flag accidental empty/unused code
+dotnet_diagnostic.CA1816.severity = suggestion
+
+# Library code is consumed by callers with arbitrary synchronization contexts:
+# require ConfigureAwait(false) on awaited tasks. Scoped to src so test/demo
+# projects (which never need it) are not flagged.
+[src/**.cs]
+dotnet_diagnostic.CA2007.severity = warning
+
+[*.{csproj,props,targets,xml}]
+indent_size = 2

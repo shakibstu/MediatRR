@@ -44,13 +44,13 @@ var provider = services.BuildServiceProvider();
 var mediator = provider.GetRequiredService<IMediator>();
 ```
 
-`IMediator` is registered as a singleton. Each `Send`, `Publish`, and `CreateStream` call opens its own DI scope so scoped dependencies (e.g. a per-request `DbContext`) work correctly; that scope is shared between pipeline behaviors and the handler. For `CreateStream` the scope lives until the returned `IAsyncEnumerable` is fully enumerated or its enumerator is disposed.
+`IMediator` is registered as transient. `Send` and `CreateStream` each open their own DI scope — shared between the pipeline behaviors and the handler — so scoped dependencies (e.g. a per-request `DbContext`) work correctly. For `CreateStream` that scope lives until the returned `IAsyncEnumerable` is fully enumerated or its enumerator is disposed. `Publish` opens a scope for its notification behaviors and then queues the notification; each handler runs later in the background worker, in its own per-message scope.
 
 ### Configuration Options
 
 The `AddMediatRR` method accepts a configuration action with the following options:
 
-- `NotificationChannelSize`: The size of the notification channel buffer (default: 100)
+- `NotificationChannelSize`: The size of the notification channel buffer (default: 10,000)
 - `MaxConcurrentMessageConsumer`: Maximum concurrent notification handlers (default: 5)
 
 ### Dead Letter Queue
