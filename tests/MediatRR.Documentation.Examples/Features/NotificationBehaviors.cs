@@ -1,5 +1,7 @@
 using MediatRR.Contract.Messaging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
 namespace MediatRR.Documentation.Examples.Features
@@ -58,21 +60,23 @@ namespace MediatRR.Documentation.Examples.Features
         {
             Console.WriteLine("\nRunning Notification Behavior Example...");
 
-            var services = new ServiceCollection();
+            var builder = Host.CreateApplicationBuilder();
+            builder.Logging.ClearProviders();
             var deadLetters = new ConcurrentQueue<DeadLettersInfo>();
 
-            services.AddMediatRR(cfg => { }, deadLetters);
+            builder.Services.AddMediatRR(cfg => { }, deadLetters);
 
             // Register behaviors
-            services.AddTransient(typeof(INotificationBehavior<>), typeof(NotificationLoggingBehavior<>));
-            services.AddTransient(typeof(INotificationHandlerBehavior<>), typeof(NotificationHandlerLoggingBehavior<>));
+            builder.Services.AddTransient(typeof(INotificationBehavior<>), typeof(NotificationLoggingBehavior<>));
+            builder.Services.AddTransient(typeof(INotificationHandlerBehavior<>), typeof(NotificationHandlerLoggingBehavior<>));
 
             // Register handler
-            services.AddNotificationHandler<UserRegistered, WelcomeEmailHandler>(null);
-            services.AddNotificationHandler<UserRegistered, SendGift>(null);
+            builder.Services.AddNotificationHandler<UserRegistered, WelcomeEmailHandler>();
+            builder.Services.AddNotificationHandler<UserRegistered, SendGift>();
 
-            var provider = services.BuildServiceProvider();
-            var mediator = provider.GetRequiredService<IMediator>();
+            using var host = builder.Build();
+            await host.StartAsync();
+            var mediator = host.Services.GetRequiredService<IMediator>();
 
             await mediator.Publish(new UserRegistered
             {
@@ -80,8 +84,8 @@ namespace MediatRR.Documentation.Examples.Features
                 Email = "user@example.com"
             });
 
+            await host.StopAsync();
             Console.WriteLine("Notification with behaviors completed!");
-            await Task.Delay(TimeSpan.FromSeconds(10));
         }
     }
 }
