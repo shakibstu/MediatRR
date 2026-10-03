@@ -75,7 +75,7 @@ namespace MediatRR.Tests
 
             Assert.False(deadLetterQueue.IsEmpty);
             Assert.True(deadLetterQueue.TryPeek(out var info));
-            Assert.Equal(2, info.AttemptCount); // Should match MaxRetryAttempts
+            Assert.Equal(3, info.AttemptCount); // Total attempts: the first try plus MaxRetryAttempts retries
             Assert.IsType<FailNotification>(info.Message);
         }
 
