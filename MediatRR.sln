@@ -13,6 +13,10 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR.Tests", "tests\Med
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR.Documentation.Examples", "tests\MediatRR.Documentation.Examples\MediatRR.Documentation.Examples.csproj", "{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MediatRR.Generators", "src\MediatRR.Generators\MediatRR.Generators.csproj", "{83EFF445-14F2-4DF8-B01F-2C8B022D618F}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -83,9 +87,24 @@ Global
 		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Release|x64.Build.0 = Release|Any CPU
 		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Release|x86.ActiveCfg = Release|Any CPU
 		{B2BCF63B-9C95-475B-A6C9-DEE7F831B14C}.Release|x86.Build.0 = Release|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Debug|x64.Build.0 = Debug|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Debug|x86.Build.0 = Debug|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Release|x64.ActiveCfg = Release|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Release|x64.Build.0 = Release|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Release|x86.ActiveCfg = Release|Any CPU
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{83EFF445-14F2-4DF8-B01F-2C8B022D618F} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {22312EE8-DF0A-4028-8F32-1A8E59A4EF80}
