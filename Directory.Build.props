@@ -1,10 +1,9 @@
 <Project>
-<PropertyGroup>
-    <Version>1.3.0</Version>
+  <PropertyGroup>
+    <Version>2.0.0</Version>
     <Authors>Shakib Loveimi</Authors>
     <RepositoryUrl>https://github.com/shakibstu/MediatRR</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <Authors>Shakib Loveimi</Authors>
     <Description>An Always Free Mediator! Enjoy!</Description>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageTags>mediator;request;response;queries;commands;notifications</PackageTags>
@@ -12,9 +11,9 @@
     <PackageIcon>mediatrr.png</PackageIcon>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <LangVersion>latest</LangVersion>
-</PropertyGroup>
-    <ItemGroup>
-        <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
-        <None Include="$(MSBuildThisFileDirectory)/assets/mediatrr.png" Pack="true" PackagePath="\" />
-    </ItemGroup>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="\" />
+    <None Include="$(MSBuildThisFileDirectory)/assets/mediatrr.png" Pack="true" PackagePath="\" />
+  </ItemGroup>
 </Project>

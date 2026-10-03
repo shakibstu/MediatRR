@@ -1,5 +1,7 @@
 using MediatRR.Contract.Messaging;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System.Collections.Concurrent;
 
 namespace MediatRR.Documentation.Examples.Features
@@ -46,27 +48,30 @@ namespace MediatRR.Documentation.Examples.Features
         {
             Console.WriteLine("\nRunning Notification Example...");
 
-            var services = new ServiceCollection();
+            var builder = Host.CreateApplicationBuilder();
+            builder.Logging.ClearProviders();
             var deadLetters = new ConcurrentQueue<DeadLettersInfo>();
 
-            services.AddMediatRR(cfg => { }, deadLetters);
+            builder.Services.AddMediatRR(cfg => { }, deadLetters);
 
             // Register multiple handlers for the same notification
-            services.AddNotificationHandler<OrderPlaced, SendEmailHandler>(null);
-            services.AddNotificationHandler<OrderPlaced, UpdateInventoryHandler>(null);
-            services.AddNotificationHandler<OrderPlaced, LogOrderHandler>(null);
+            builder.Services.AddNotificationHandler<OrderPlaced, SendEmailHandler>();
+            builder.Services.AddNotificationHandler<OrderPlaced, UpdateInventoryHandler>();
+            builder.Services.AddNotificationHandler<OrderPlaced, LogOrderHandler>();
 
-            var provider = services.BuildServiceProvider();
-            var mediator = provider.GetRequiredService<IMediator>();
+            using var host = builder.Build();
+            await host.StartAsync();
+            var mediator = host.Services.GetRequiredService<IMediator>();
 
-            // Publish the notification - all handlers will be called
+            // Publish the notification - all handlers will be called by the background worker
             await mediator.Publish(new OrderPlaced
             {
                 OrderId = "ORD-12345",
                 Amount = 99.99m
             });
 
-            Console.WriteLine("All notification handlers executed!");
+            await host.StopAsync();
+            Console.WriteLine("Host stopped: the queue was drained and all notification handlers executed.");
         }
     }
 }

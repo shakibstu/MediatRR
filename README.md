@@ -44,7 +44,18 @@ var provider = services.BuildServiceProvider();
 var mediator = provider.GetRequiredService<IMediator>();
 ```
 
-`IMediator` is registered as transient. `Send` and `CreateStream` each open their own DI scope — shared between the pipeline behaviors and the handler — so scoped dependencies (e.g. a per-request `DbContext`) work correctly. For `CreateStream` that scope lives until the returned `IAsyncEnumerable` is fully enumerated or its enumerator is disposed. `Publish` opens a scope for its notification behaviors and then queues the notification; each handler runs later in the background worker, in its own per-message scope.
+`IMediator` is registered as transient. `Send` and `CreateStream` each open their own DI scope, shared between the pipeline behaviors and the handler, so scoped dependencies such as a `DbContext` resolve once per call. For `CreateStream` that scope lives until the returned `IAsyncEnumerable` is fully enumerated or its enumerator is disposed. Handlers never share the scope of the code that calls the mediator: a scoped service your controller holds is a different instance from the one the handler receives. `Publish` opens a scope for its notification behaviors and then queues the notification; each handler runs later in the background worker, in a per-message scope that stays alive until every handler of that message has finished.
+
+### Notifications need a running host
+
+Notification handlers are executed by a hosted background service. In ASP.NET Core or the generic host it starts with the application. If you build a plain `ServiceCollection`, nothing starts it: `Publish` queues the notification and no handler runs. Either use `Host.CreateApplicationBuilder` (see the notification examples) or start the worker yourself:
+
+```csharp
+var worker = provider.GetRequiredService<IHostedService>();
+await worker.StartAsync(CancellationToken.None);
+// ... publish ...
+await worker.StopAsync(CancellationToken.None); // drains the queue before returning
+```
 
 ### Configuration Options
 
@@ -52,6 +63,8 @@ The `AddMediatRR` method accepts a configuration action with the following optio
 
 - `NotificationChannelSize`: The size of the notification channel buffer (default: 10,000)
 - `MaxConcurrentMessageConsumer`: Maximum concurrent notification handlers (default: 5)
+
+Both values must be at least 1; `AddMediatRR` throws `ArgumentOutOfRangeException` otherwise. `MaxConcurrentMessageConsumer` caps how many handler executions run at once. When every slot is busy and the channel is full, `Publish` waits for room instead of growing memory.
 
 ### Dead Letter Queue
 
@@ -62,7 +75,7 @@ The `deadLetters` parameter is a `ConcurrentQueue<DeadLettersInfo>` that collect
 - Analyze patterns in notification failures
 - Ensure no notifications are silently lost
 
-Each `DeadLettersInfo` entry contains the failed notification and error details, allowing you to investigate and potentially reprocess failed messages.
+Each `DeadLettersInfo` entry contains the failed notification, the exception, `AttemptCount` (the total number of times the handler was attempted, including retries) and the UTC time of the last attempt. Entries are also written for notifications abandoned during a forced shutdown, with an `OperationCanceledException`, so nothing is silently lost.
 
 ## Basic Usage
 
@@ -156,12 +169,12 @@ services.AddStreamRequestHandler<StreamData, int, StreamDataHandler>();
 
 #### Auto-Registration
 
-MediatRR includes a source generator that can automatically register your stream handlers. This requires importing the generated namespace:
+MediatRR ships a source generator inside the package. It registers every non-abstract, non-generic class or record in your compilation that implements `IRequestHandler<,>` or `IStreamRequestHandler<,>`, including classes that implement several handler interfaces. Nested types must be at least `internal`. The generated code targets C# 7.3, so it compiles in any project that references the package.
 
 ```csharp
 using MediatRR.ServiceGenerator;
 
-// Registers all stream handlers in the assembly
+services.AutoRegisterRequestHandlers();
 services.AutoRegisterStreamHandlers();
 ```
 
@@ -220,7 +233,7 @@ public class UpdateInventoryHandler : INotificationHandler<OrderPlaced>
 
 ### Registering Handlers
 
-Register your notification handlers with the DI container. The retry policy is optional — omit it (or pass `null`) to use `NotificationRetryPolicy.Default` (zero retries, no delay):
+Register your notification handlers with the DI container. The retry policy is optional. Omitting it (or passing `null`) means the handler has no opinion: the notification type uses whichever policy its other handlers registered, or no retries at all:
 
 ```csharp
 var retryPolicy = new NotificationRetryPolicy
@@ -236,7 +249,11 @@ services.AddNotificationHandler<OrderPlaced, UpdateInventoryHandler>(retryPolicy
 services.AddNotificationHandler<OrderPlaced, AuditHandler>();
 ```
 
-> **One policy per notification type.** All handlers for the same notification share a single retry policy. Registering conflicting policies for the same notification type throws `InvalidOperationException` when the resiliency provider is resolved. Registering the same (or equivalent) policy multiple times is fine.
+> **One policy per notification type.** All handlers for the same notification share a single retry policy. Registering two different policies for one notification type throws `InvalidOperationException` when the worker starts. Handlers registered without a policy never conflict.
+
+### Retries
+
+A failing handler is retried in place: after `DelayBetweenRetries` the same handler runs again, up to `MaxRetryAttempts` times. Other handlers of the same notification are not re-run. An exception thrown by an `INotificationHandlerBehavior` is retried the same way. After the last attempt the notification is dead-lettered together with the last exception.
 
 ### Publishing Notifications
 
@@ -249,6 +266,8 @@ await mediator.Publish(new OrderPlaced
     Amount = 99.99m 
 });
 ```
+
+`Publish` returns once the notification is queued, after the `INotificationBehavior` pipeline has run. After the host has stopped, `Publish` throws `InvalidOperationException`.
 
 ## Behaviors
 

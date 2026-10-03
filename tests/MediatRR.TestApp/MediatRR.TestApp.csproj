@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <EmitCompilerGeneratedFiles>true</EmitCompilerGeneratedFiles>
@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\MediatRR\MediatRR.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="true"  />
+    <ProjectReference Include="..\..\src\MediatRR\MediatRR.csproj" />
+    <ProjectReference Include="..\..\src\MediatRR.Generators\MediatRR.Generators.csproj" OutputItemType="Analyzer" ReferenceOutputAssembly="false" />
   </ItemGroup>
 </Project>

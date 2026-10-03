@@ -9,9 +9,10 @@ namespace MediatRR.Tests
             var channel = new NotificationChannel(config);
             var notification = new TestNotification { Message = "Test" };
 
-            await channel.AddToChannel(notification, CancellationToken.None);
+            await channel.AddToChannel(new NotificationPublishContext(notification, notification.GetType()), CancellationToken.None);
 
-            Assert.Equal(1, channel.Count);
+            Assert.True(channel.TryRead(out var context));
+            Assert.Same(notification, context.Message);
         }
 
         [Fact(Timeout = 5000)]
@@ -21,12 +22,10 @@ namespace MediatRR.Tests
             var channel = new NotificationChannel(config);
             var notification = new TestNotification { Message = "Test" };
 
-            await channel.AddToChannel(notification, CancellationToken.None);
+            await channel.AddToChannel(new NotificationPublishContext(notification, notification.GetType()), CancellationToken.None);
 
-            Assert.Equal(1, channel.Count);
-
-            var enumerator = await channel.ReadFromChannel(CancellationToken.None);
-            Assert.Equal(notification, enumerator.Message);
+            var context = await channel.ReadFromChannel(CancellationToken.None);
+            Assert.Equal(notification, context.Message);
         }
     }
 }

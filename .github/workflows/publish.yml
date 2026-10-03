@@ -14,7 +14,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 10.0.x
         
     - name: Restore dependencies
       run: dotnet restore MediatRR.sln
@@ -29,4 +29,4 @@ jobs:
       run: dotnet pack src/MediatRR/MediatRR.csproj --configuration Release --no-build --output .
       
     - name: Push to NuGet
-      run: dotnet nuget push *.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json
+      run: dotnet nuget push *.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
