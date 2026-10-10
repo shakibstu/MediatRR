@@ -61,6 +61,18 @@ public class HandlerRegistrationGeneratorTests
             {
                 public IAsyncEnumerable<int> Handle(StreamReq r, CancellationToken ct) => null;
             }
+
+            public sealed class Note : INotification { }
+
+            public sealed class NoteDeadLetterHandler : IDeadLetterHandler<Note>
+            {
+                public Task Handle(DeadLetter<Note> deadLetter, CancellationToken ct) => Task.CompletedTask;
+            }
+
+            public abstract class AbstractDeadLetterHandler : IDeadLetterHandler<Note>
+            {
+                public abstract Task Handle(DeadLetter<Note> deadLetter, CancellationToken ct);
+            }
         }
         """;
 
@@ -119,6 +131,18 @@ public class HandlerRegistrationGeneratorTests
     }
 
     [Fact]
+    public void Dead_letter_handlers_are_registered_by_the_dead_letter_method()
+    {
+        var (generated, _) = Run(Consumer);
+
+        var deadLetterMethod = generated[generated.IndexOf("AutoRegisterDeadLetterHandlers", StringComparison.Ordinal)..];
+        Assert.Contains("global::MediatRR.Contract.Messaging.IDeadLetterHandler<global::Consumer.Note>, global::Consumer.NoteDeadLetterHandler>(services);", deadLetterMethod);
+        Assert.DoesNotContain("AbstractDeadLetterHandler", generated);
+        Assert.DoesNotContain("PlainHandler", deadLetterMethod);
+        Assert.DoesNotContain("NoteDeadLetterHandler", generated[..generated.IndexOf("AutoRegisterDeadLetterHandlers", StringComparison.Ordinal)]);
+    }
+
+    [Fact]
     public void Generated_code_parses_as_CSharp_7_3()
     {
         var (generated, _) = Run(Consumer);
@@ -129,12 +153,13 @@ public class HandlerRegistrationGeneratorTests
     }
 
     [Fact]
-    public void Both_methods_exist_when_there_are_no_handlers()
+    public void All_methods_exist_when_there_are_no_handlers()
     {
         var (generated, diagnostics) = Run("namespace Empty { public class Nothing { } }");
 
         Assert.Contains("AutoRegisterRequestHandlers(this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)", generated);
         Assert.Contains("AutoRegisterStreamHandlers(this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)", generated);
+        Assert.Contains("AutoRegisterDeadLetterHandlers(this global::Microsoft.Extensions.DependencyInjection.IServiceCollection services)", generated);
         Assert.Empty(diagnostics.Where(diagnostic => diagnostic.Severity == DiagnosticSeverity.Error));
     }
 }

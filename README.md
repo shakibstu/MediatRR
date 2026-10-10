@@ -171,14 +171,17 @@ services.AddStreamRequestHandler<StreamData, int, StreamDataHandler>();
 
 #### Auto-Registration
 
-MediatRR ships a source generator inside the package. It registers every non-abstract, non-generic class or record in your compilation that implements `IRequestHandler<,>` or `IStreamRequestHandler<,>`, including classes that implement several handler interfaces. Nested types must be at least `internal`. The generated code targets C# 7.3, so it compiles in any project that references the package.
+MediatRR ships a source generator inside the package. It registers every non-abstract, non-generic class or record in your compilation that implements `IRequestHandler<,>`, `IStreamRequestHandler<,>` or `IDeadLetterHandler<>`, including classes that implement several handler interfaces. Nested types must be at least `internal`. The generated code targets C# 7.3, so it compiles in any project that references the package.
 
 ```csharp
 using MediatRR.ServiceGenerator;
 
 services.AutoRegisterRequestHandlers();
 services.AutoRegisterStreamHandlers();
+services.AutoRegisterDeadLetterHandlers();
 ```
+
+Notification handlers are not auto-registered because each registration may carry a retry policy; register them with `AddNotificationHandler`.
 
 ### Consuming the Stream
 
