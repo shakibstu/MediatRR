@@ -122,7 +122,7 @@ internal sealed class HandleNotificationsWorker(
                 }
                 catch (Exception ex)
                 {
-                    if (attempt > policy.MaxRetryAttempts)
+                    if (attempt > policy.MaxRetryAttempts || !policy.IsRetryable(ex))
                     {
                         await DeadLetterAsync(wrapper, serviceProvider, message, ex, attempt, pipeline.HandlerType, stoppingToken).ConfigureAwait(false);
                         return;
@@ -132,9 +132,10 @@ internal sealed class HandleNotificationsWorker(
                     slotHeld = false;
                     try
                     {
-                        if (policy.DelayBetweenRetries > TimeSpan.Zero)
+                        var delay = policy.GetRetryDelay(attempt);
+                        if (delay > TimeSpan.Zero)
                         {
-                            await Task.Delay(policy.DelayBetweenRetries, stoppingToken).ConfigureAwait(false);
+                            await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
                         }
 
                         await _slots.WaitAsync(stoppingToken).ConfigureAwait(false);

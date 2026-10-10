@@ -51,6 +51,16 @@ public static class MediatRRServiceProviderExtension
             throw new ArgumentOutOfRangeException(nameof(notificationRetryPolicy), notificationRetryPolicy.DelayBetweenRetries, "DelayBetweenRetries cannot be negative.");
         }
 
+        if (notificationRetryPolicy.BackoffMultiplier < 1 || double.IsNaN(notificationRetryPolicy.BackoffMultiplier))
+        {
+            throw new ArgumentOutOfRangeException(nameof(notificationRetryPolicy), notificationRetryPolicy.BackoffMultiplier, "BackoffMultiplier must be at least 1.");
+        }
+
+        if (notificationRetryPolicy.MaxDelayBetweenRetries < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(notificationRetryPolicy), notificationRetryPolicy.MaxDelayBetweenRetries, "MaxDelayBetweenRetries cannot be negative.");
+        }
+
         services.AddSingleton(new NotificationPolicyRegistration(typeof(T), notificationRetryPolicy));
         return services;
     }

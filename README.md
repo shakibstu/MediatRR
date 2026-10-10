@@ -257,6 +257,26 @@ services.AddNotificationHandler<OrderPlaced, AuditHandler>();
 
 A failing handler is retried in place: after `DelayBetweenRetries` the same handler runs again, up to `MaxRetryAttempts` times. Other handlers of the same notification are not re-run. An exception thrown by an `INotificationHandlerBehavior` is retried the same way. After the last attempt the notification is dead-lettered together with the last exception.
 
+#### Backoff and exception filtering
+
+```csharp
+var policy = new NotificationRetryPolicy
+{
+    MaxRetryAttempts = 5,
+    DelayBetweenRetries = TimeSpan.FromSeconds(1),
+    BackoffMultiplier = 2,                              // 1s, 2s, 4s, 8s, ...
+    MaxDelayBetweenRetries = TimeSpan.FromSeconds(10),  // never wait longer than this
+    ShouldRetry = ex => ex is TimeoutException or HttpRequestException
+};
+```
+
+- `BackoffMultiplier` scales the delay after every retry. The default of `1` keeps the delay constant. Values below `1` are rejected.
+- `MaxDelayBetweenRetries` caps a backed-off delay. `null` (the default) means no cap.
+- `ShouldRetry` decides per exception whether a retry is worth it. `null` (the default) retries every exception. When it returns `false` the notification is dead-lettered right away, with the attempt count reached so far.
+- `GetRetryDelay(failedAttempt)` returns the delay the worker will wait after the given 1-based attempt, if you want to inspect a policy.
+
+All of these take part in the one-policy-per-notification-type check. Two policies with different `ShouldRetry` delegates count as different policies, so share one instance between handlers.
+
 ### Dead Letter Handlers
 
 Implement `IDeadLetterHandler<TNotification>` to be called when a notification of that type is dead-lettered. The handler receives a `DeadLetter<TNotification>` with the typed notification, the exception, `AttemptCount`, `HandlerType` and `LastAttemptedAt`:
