@@ -75,7 +75,9 @@ The `deadLetters` parameter is a `ConcurrentQueue<DeadLettersInfo>` that collect
 - Analyze patterns in notification failures
 - Ensure no notifications are silently lost
 
-Each `DeadLettersInfo` entry contains the failed notification, the exception, `AttemptCount` (the total number of times the handler was attempted, including retries) and the UTC time of the last attempt. Entries are also written for notifications abandoned during a forced shutdown, with an `OperationCanceledException`, so nothing is silently lost.
+Each `DeadLettersInfo` entry contains the failed notification, the exception, `AttemptCount` (the total number of times the handler was attempted, including retries), `HandlerType` (the handler that failed, or `null` when the failure happened before any handler ran) and the UTC time of the last attempt. Entries are also written for notifications abandoned during a forced shutdown, with an `OperationCanceledException`, so nothing is silently lost.
+
+For a typed, push-based alternative to polling the queue, see [Dead Letter Handlers](#dead-letter-handlers). The queue keeps recording every entry whether or not a handler is registered.
 
 ## Basic Usage
 
@@ -169,14 +171,17 @@ services.AddStreamRequestHandler<StreamData, int, StreamDataHandler>();
 
 #### Auto-Registration
 
-MediatRR ships a source generator inside the package. It registers every non-abstract, non-generic class or record in your compilation that implements `IRequestHandler<,>` or `IStreamRequestHandler<,>`, including classes that implement several handler interfaces. Nested types must be at least `internal`. The generated code targets C# 7.3, so it compiles in any project that references the package.
+MediatRR ships a source generator inside the package. It registers every non-abstract, non-generic class or record in your compilation that implements `IRequestHandler<,>`, `IStreamRequestHandler<,>` or `IDeadLetterHandler<>`, including classes that implement several handler interfaces. Nested types must be at least `internal`. The generated code targets C# 7.3, so it compiles in any project that references the package.
 
 ```csharp
 using MediatRR.ServiceGenerator;
 
 services.AutoRegisterRequestHandlers();
 services.AutoRegisterStreamHandlers();
+services.AutoRegisterDeadLetterHandlers();
 ```
+
+Notification handlers are not auto-registered because each registration may carry a retry policy; register them with `AddNotificationHandler`.
 
 ### Consuming the Stream
 
@@ -254,6 +259,69 @@ services.AddNotificationHandler<OrderPlaced, AuditHandler>();
 ### Retries
 
 A failing handler is retried in place: after `DelayBetweenRetries` the same handler runs again, up to `MaxRetryAttempts` times. Other handlers of the same notification are not re-run. An exception thrown by an `INotificationHandlerBehavior` is retried the same way. After the last attempt the notification is dead-lettered together with the last exception.
+
+#### Backoff and exception filtering
+
+```csharp
+var policy = new NotificationRetryPolicy
+{
+    MaxRetryAttempts = 5,
+    DelayBetweenRetries = TimeSpan.FromSeconds(1),
+    BackoffMultiplier = 2,                              // 1s, 2s, 4s, 8s, ...
+    MaxDelayBetweenRetries = TimeSpan.FromSeconds(10),  // never wait longer than this
+    ShouldRetry = ex => ex is TimeoutException or HttpRequestException
+};
+```
+
+- `BackoffMultiplier` scales the delay after every retry. The default of `1` keeps the delay constant. Values below `1` are rejected.
+- `MaxDelayBetweenRetries` caps a backed-off delay. `null` (the default) means no cap.
+- `ShouldRetry` decides per exception whether a retry is worth it. `null` (the default) retries every exception. When it returns `false` the notification is dead-lettered right away, with the attempt count reached so far.
+- `GetRetryDelay(failedAttempt)` returns the delay the worker will wait after the given 1-based attempt, if you want to inspect a policy.
+
+All of these take part in the one-policy-per-notification-type check. Two policies with different `ShouldRetry` delegates count as different policies, so share one instance between handlers.
+
+### Dead Letter Handlers
+
+Implement `IDeadLetterHandler<TNotification>` to be called when a notification of that type is dead-lettered. The handler receives a `DeadLetter<TNotification>` with the typed notification, the exception, `AttemptCount`, `HandlerType` and `LastAttemptedAt`:
+
+```csharp
+public class OrderPlacedDeadLetterHandler : IDeadLetterHandler<OrderPlaced>
+{
+    public Task Handle(DeadLetter<OrderPlaced> deadLetter, CancellationToken cancellationToken)
+    {
+        Console.WriteLine($"Order {deadLetter.Notification.OrderId} failed in {deadLetter.HandlerType?.Name} after {deadLetter.AttemptCount} attempts: {deadLetter.Exception.Message}");
+        return Task.CompletedTask;
+    }
+}
+
+services.AddDeadLetterHandler<OrderPlaced, OrderPlacedDeadLetterHandler>();
+```
+
+Rules:
+
+- The dead letter queue passed to `AddMediatRR` still records every entry, so existing code keeps working unchanged.
+- A dead letter handler runs in the same DI scope as the handler that failed, so scoped services are shared.
+- It is called once per failed handler. Several dead letter handlers for the same notification type all run, one after the other.
+- It is never retried. If it throws, a second queue entry is written whose `HandlerType` is the dead letter handler's type and whose exception is the one it threw.
+- It also runs when handler resolution fails before any handler executes; `HandlerType` is `null` and `AttemptCount` is `0` in that case.
+- During shutdown, notifications that are cancelled in flight or never read from the channel go to the queue only. Dead letter handlers are not invoked once the host is stopping.
+
+### Ordered Notifications
+
+By default every notification is handled as soon as a concurrency slot is free, so two notifications published back to back may be handled in either order. When order matters within a group, for example all events of one account, implement `IOrderedNotification` instead of `INotification`:
+
+```csharp
+public class BalanceChanged : IOrderedNotification
+{
+    public string AccountId { get; set; }
+    public decimal NewBalance { get; set; }
+    public string OrderingKey => AccountId;
+}
+```
+
+Notifications with the same `OrderingKey` are handled strictly in publish order: the next one starts only after every handler of the previous one has finished, retries included. Notifications with different keys are handled concurrently, as are plain notifications. A `null` key opts that notification out of ordering.
+
+Ordered notifications are taken off the channel ahead of time so that other keys are not held up. At most `NotificationChannelSize` of them wait for their key in memory; beyond that `Publish` waits, the same way it does when the channel is full.
 
 ### Publishing Notifications
 
@@ -357,6 +425,26 @@ public class StreamLoggingBehavior<TRequest, TResponse> : IStreamBehavior<TReque
 
 // Register the behavior
 services.AddTransient(typeof(IStreamBehavior<,>), typeof(StreamLoggingBehavior<,>));
+```
+
+## Metrics
+
+MediatRR emits metrics through `System.Diagnostics.Metrics` on a meter named `MediatRR` (`MediatRRInstrumentation.MeterName`). If an `IMeterFactory` is registered, for example by `services.AddMetrics()` or OpenTelemetry, the meter is created through it. Otherwise MediatRR creates its own.
+
+| Instrument | Kind | Tags | Meaning |
+|---|---|---|---|
+| `mediatrr.notifications.published` | counter | `notification.type` | Notifications accepted by `Publish` and queued for the worker |
+| `mediatrr.notifications.queued` | observable gauge | | Notifications waiting in the channel. Growth here means handlers cannot keep up |
+| `mediatrr.handlers.in_flight` | up-down counter | | Handler attempts currently running |
+| `mediatrr.handlers.duration` | histogram (ms) | `notification.type`, `handler.type`, `outcome` | Duration of one handler attempt. `outcome` is `success`, `failure` or `cancelled` |
+| `mediatrr.handlers.retries` | counter | `notification.type`, `handler.type` | Failed attempts that are retried |
+| `mediatrr.dead_letters` | counter | `notification.type`, `handler.type` | Entries written to the dead letter queue. `handler.type` is omitted when no handler ran |
+
+With OpenTelemetry:
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics => metrics.AddMeter(MediatRRInstrumentation.MeterName));
 ```
 
 ## ASP.NET Core Integration

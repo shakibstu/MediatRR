@@ -9,13 +9,21 @@ namespace MediatRR;
 /// </summary>
 internal sealed class InternalDeadLettersKeeper
 {
-    public InternalDeadLettersKeeper(ConcurrentQueue<DeadLettersInfo> queue)
+    private readonly MediatRRMetrics _metrics;
+
+    public InternalDeadLettersKeeper(ConcurrentQueue<DeadLettersInfo> queue, MediatRRMetrics metrics)
     {
         DeadLettersQueue = queue ?? throw new ArgumentNullException(nameof(queue));
+        _metrics = metrics ?? throw new ArgumentNullException(nameof(metrics));
     }
 
     public ConcurrentQueue<DeadLettersInfo> DeadLettersQueue { get; }
 
-    public void Record(object message, Exception exception, int attemptCount) =>
-        DeadLettersQueue.Enqueue(new DeadLettersInfo(message, exception, attemptCount, DateTime.UtcNow));
+    public DeadLettersInfo Record(object message, Exception exception, int attemptCount, Type handlerType = null)
+    {
+        var info = new DeadLettersInfo(message, exception, attemptCount, DateTime.UtcNow, handlerType);
+        DeadLettersQueue.Enqueue(info);
+        _metrics.DeadLettered(message.GetType(), handlerType);
+        return info;
+    }
 }

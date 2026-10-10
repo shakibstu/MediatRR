@@ -13,7 +13,7 @@ namespace MediatRR;
 /// <summary>
 /// Internal implementation of the mediator pattern.
 /// </summary>
-internal sealed class Mediator(NotificationChannel notificationChannel, IServiceScopeFactory scopeFactory) : IMediator
+internal sealed class Mediator(NotificationChannel notificationChannel, IServiceScopeFactory scopeFactory, MediatRRMetrics metrics) : IMediator
 {
     public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
     {
@@ -39,10 +39,11 @@ internal sealed class Mediator(NotificationChannel notificationChannel, IService
         {
             var serviceProvider = scope.ServiceProvider;
 
-            Task Enqueue()
+            async Task Enqueue()
             {
-                if (!HasHandlers(serviceProvider, runtimeType)) return Task.CompletedTask;
-                return EnqueueAsync(new NotificationPublishContext(notification, runtimeType), cancellationToken);
+                if (!HasHandlers(serviceProvider, runtimeType)) return;
+                await EnqueueAsync(new NotificationPublishContext(notification, runtimeType), cancellationToken).ConfigureAwait(false);
+                metrics.NotificationPublished(runtimeType);
             }
 
             await WrapperCache.ForNotification(runtimeType)

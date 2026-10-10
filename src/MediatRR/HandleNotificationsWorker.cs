@@ -1,3 +1,4 @@
+using MediatRR.Contract.Messaging;
 using MediatRR.Dispatch;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -17,10 +18,14 @@ internal sealed class HandleNotificationsWorker(
     NotificationResiliencyProvider resiliencyProvider,
     MediatRRConfiguration configuration,
     InternalDeadLettersKeeper deadLettersKeeper,
+    MediatRRMetrics metrics,
     IServiceScopeFactory scopeFactory) : BackgroundService
 {
     private readonly SemaphoreSlim _slots = new(configuration.MaxConcurrentMessageConsumer);
+    private readonly SemaphoreSlim _orderedBacklog = new(configuration.NotificationChannelSize);
     private readonly List<Task> _inFlight = new();
+    private readonly Dictionary<string, Task> _orderedTails = new();
+    private readonly object _orderedLock = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -42,8 +47,24 @@ internal sealed class HandleNotificationsWorker(
                     break;
                 }
 
-                var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 _inFlight.RemoveAll(static task => task.IsCompleted);
+                if ((context.Message as IOrderedNotification)?.OrderingKey is { } orderingKey)
+                {
+                    try
+                    {
+                        await _orderedBacklog.WaitAsync(stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException ex)
+                    {
+                        deadLettersKeeper.Record(context.Message, ex, 0);
+                        break;
+                    }
+
+                    _inFlight.Add(ProcessOrderedAsync(orderingKey, context, stoppingToken));
+                    continue;
+                }
+
+                var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 _inFlight.Add(ProcessMessageAsync(context, started, stoppingToken));
                 await started.Task.ConfigureAwait(false);
             }
@@ -66,25 +87,67 @@ internal sealed class HandleNotificationsWorker(
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    private Task ProcessOrderedAsync(string orderingKey, NotificationPublishContext context, CancellationToken stoppingToken)
+    {
+        var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task previous;
+        lock (_orderedLock)
+        {
+            _orderedTails.TryGetValue(orderingKey, out previous);
+            _orderedTails[orderingKey] = done.Task;
+        }
+
+        return RunOrderedAsync(previous, done, orderingKey, context, stoppingToken);
+    }
+
+    private async Task RunOrderedAsync(Task previous, TaskCompletionSource<bool> done, string orderingKey, NotificationPublishContext context, CancellationToken stoppingToken)
+    {
+        try
+        {
+            if (previous is not null)
+            {
+                await previous.ConfigureAwait(false);
+            }
+
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await ProcessMessageAsync(context, started, stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_orderedLock)
+            {
+                if (_orderedTails.TryGetValue(orderingKey, out var tail) && ReferenceEquals(tail, done.Task))
+                {
+                    _orderedTails.Remove(orderingKey);
+                }
+            }
+
+            done.TrySetResult(true);
+            _orderedBacklog.Release();
+        }
+    }
+
     private async Task ProcessMessageAsync(NotificationPublishContext context, TaskCompletionSource<bool> started, CancellationToken stoppingToken)
     {
         var scope = scopeFactory.CreateAsyncScope();
         var handlerTasks = new List<Task>();
         try
         {
+            NotificationWrapper wrapper = null;
             try
             {
-                var pipelines = WrapperCache.ForNotification(context.Type).BuildHandlerPipelines(scope.ServiceProvider, context.Message);
+                wrapper = WrapperCache.ForNotification(context.Type);
+                var pipelines = wrapper.BuildHandlerPipelines(scope.ServiceProvider, context.Message);
                 var policy = resiliencyProvider.GetResiliencyPolicy(context.Type);
                 foreach (var pipeline in pipelines)
                 {
                     await _slots.WaitAsync(stoppingToken).ConfigureAwait(false);
-                    handlerTasks.Add(RunWithRetryAsync(pipeline, context.Message, policy, stoppingToken));
+                    handlerTasks.Add(RunWithRetryAsync(wrapper, scope.ServiceProvider, pipeline, context.Message, policy, stoppingToken));
                 }
             }
             catch (Exception ex)
             {
-                deadLettersKeeper.Record(context.Message, ex, 0);
+                handlerTasks.Add(DeadLetterAsync(wrapper, scope.ServiceProvider, context.Message, ex, 0, null, stoppingToken));
             }
             finally
             {
@@ -99,39 +162,46 @@ internal sealed class HandleNotificationsWorker(
         }
     }
 
-    private async Task RunWithRetryAsync(Func<CancellationToken, Task> pipeline, object message, NotificationRetryPolicy policy, CancellationToken stoppingToken)
+    private async Task RunWithRetryAsync(NotificationWrapper wrapper, IServiceProvider serviceProvider, HandlerPipeline pipeline, INotification message, NotificationRetryPolicy policy, CancellationToken stoppingToken)
     {
         var slotHeld = true;
         var attempt = 1;
+        var notificationType = message.GetType();
         try
         {
             while (true)
             {
+                var startedAt = metrics.HandlerStarted();
                 try
                 {
-                    await pipeline(stoppingToken).ConfigureAwait(false);
+                    await pipeline.Invoke(stoppingToken).ConfigureAwait(false);
+                    metrics.HandlerFinished(startedAt, notificationType, pipeline.HandlerType, "success");
                     return;
                 }
                 catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
                 {
-                    deadLettersKeeper.Record(message, ex, attempt);
+                    metrics.HandlerFinished(startedAt, notificationType, pipeline.HandlerType, "cancelled");
+                    deadLettersKeeper.Record(message, ex, attempt, pipeline.HandlerType);
                     return;
                 }
                 catch (Exception ex)
                 {
-                    if (attempt > policy.MaxRetryAttempts)
+                    metrics.HandlerFinished(startedAt, notificationType, pipeline.HandlerType, "failure");
+                    if (attempt > policy.MaxRetryAttempts || !policy.IsRetryable(ex))
                     {
-                        deadLettersKeeper.Record(message, ex, attempt);
+                        await DeadLetterAsync(wrapper, serviceProvider, message, ex, attempt, pipeline.HandlerType, stoppingToken).ConfigureAwait(false);
                         return;
                     }
 
+                    metrics.HandlerRetried(notificationType, pipeline.HandlerType);
                     _slots.Release();
                     slotHeld = false;
                     try
                     {
-                        if (policy.DelayBetweenRetries > TimeSpan.Zero)
+                        var delay = policy.GetRetryDelay(attempt);
+                        if (delay > TimeSpan.Zero)
                         {
-                            await Task.Delay(policy.DelayBetweenRetries, stoppingToken).ConfigureAwait(false);
+                            await Task.Delay(delay, stoppingToken).ConfigureAwait(false);
                         }
 
                         await _slots.WaitAsync(stoppingToken).ConfigureAwait(false);
@@ -139,7 +209,7 @@ internal sealed class HandleNotificationsWorker(
                     }
                     catch (OperationCanceledException)
                     {
-                        deadLettersKeeper.Record(message, ex, attempt);
+                        deadLettersKeeper.Record(message, ex, attempt, pipeline.HandlerType);
                         return;
                     }
 
@@ -152,6 +222,38 @@ internal sealed class HandleNotificationsWorker(
             if (slotHeld)
             {
                 _slots.Release();
+            }
+        }
+    }
+
+    private async Task DeadLetterAsync(NotificationWrapper wrapper, IServiceProvider serviceProvider, INotification message, Exception exception, int attempt, Type handlerType, CancellationToken stoppingToken)
+    {
+        var deadLetter = deadLettersKeeper.Record(message, exception, attempt, handlerType);
+        if (wrapper is null || stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        IReadOnlyList<HandlerPipeline> pipelines;
+        try
+        {
+            pipelines = wrapper.BuildDeadLetterPipelines(serviceProvider, message, deadLetter);
+        }
+        catch (Exception ex)
+        {
+            deadLettersKeeper.Record(message, ex, 0);
+            return;
+        }
+
+        foreach (var pipeline in pipelines)
+        {
+            try
+            {
+                await pipeline.Invoke(stoppingToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                deadLettersKeeper.Record(message, ex, 1, pipeline.HandlerType);
             }
         }
     }

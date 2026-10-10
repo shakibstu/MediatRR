@@ -26,8 +26,7 @@ namespace MediatRR
 
             var existing = _resiliencies[notificationType];
             if (ReferenceEquals(existing, policy)) return;
-            if (existing.MaxRetryAttempts == policy.MaxRetryAttempts &&
-                existing.DelayBetweenRetries == policy.DelayBetweenRetries) return;
+            if (existing.IsEquivalentTo(policy)) return;
 
             throw new InvalidOperationException(
                 $"Conflicting retry policies registered for {notificationType}. " +

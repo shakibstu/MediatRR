@@ -21,10 +21,11 @@ public static class MediatRRServiceProviderExtension
         configuration?.Invoke(serviceConfig);
         Validate(serviceConfig);
 
-        services.TryAddSingleton(new InternalDeadLettersKeeper(deadLetters));
+        services.TryAddSingleton(provider => new InternalDeadLettersKeeper(deadLetters, provider.GetRequiredService<MediatRRMetrics>()));
         services.TryAddSingleton(serviceConfig);
         services.TryAddTransient<IMediator, Mediator>();
         services.TryAddSingleton<NotificationChannel>();
+        services.TryAddSingleton<MediatRRMetrics>();
         services.TryAddSingleton<NotificationResiliencyProvider>();
         services.AddHostedService<HandleNotificationsWorker>();
         return services;
@@ -51,7 +52,30 @@ public static class MediatRRServiceProviderExtension
             throw new ArgumentOutOfRangeException(nameof(notificationRetryPolicy), notificationRetryPolicy.DelayBetweenRetries, "DelayBetweenRetries cannot be negative.");
         }
 
+        if (notificationRetryPolicy.BackoffMultiplier < 1 || double.IsNaN(notificationRetryPolicy.BackoffMultiplier))
+        {
+            throw new ArgumentOutOfRangeException(nameof(notificationRetryPolicy), notificationRetryPolicy.BackoffMultiplier, "BackoffMultiplier must be at least 1.");
+        }
+
+        if (notificationRetryPolicy.MaxDelayBetweenRetries < TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(notificationRetryPolicy), notificationRetryPolicy.MaxDelayBetweenRetries, "MaxDelayBetweenRetries cannot be negative.");
+        }
+
         services.AddSingleton(new NotificationPolicyRegistration(typeof(T), notificationRetryPolicy));
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a handler that runs when a notification of type <typeparamref name="T"/> is dead-lettered.
+    /// The dead letter queue passed to <see cref="AddMediatRR"/> still records every entry.
+    /// </summary>
+    public static IServiceCollection AddDeadLetterHandler<T, THandler>(this IServiceCollection services)
+        where THandler : class, IDeadLetterHandler<T> where T : INotification
+    {
+        if (services is null) throw new ArgumentNullException(nameof(services));
+
+        services.AddTransient<IDeadLetterHandler<T>, THandler>();
         return services;
     }
 
