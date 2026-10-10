@@ -18,6 +18,7 @@ internal sealed class HandleNotificationsWorker(
     NotificationResiliencyProvider resiliencyProvider,
     MediatRRConfiguration configuration,
     InternalDeadLettersKeeper deadLettersKeeper,
+    MediatRRMetrics metrics,
     IServiceScopeFactory scopeFactory) : BackgroundService
 {
     private readonly SemaphoreSlim _slots = new(configuration.MaxConcurrentMessageConsumer);
@@ -106,28 +107,34 @@ internal sealed class HandleNotificationsWorker(
     {
         var slotHeld = true;
         var attempt = 1;
+        var notificationType = message.GetType();
         try
         {
             while (true)
             {
+                var startedAt = metrics.HandlerStarted();
                 try
                 {
                     await pipeline.Invoke(stoppingToken).ConfigureAwait(false);
+                    metrics.HandlerFinished(startedAt, notificationType, pipeline.HandlerType, "success");
                     return;
                 }
                 catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
                 {
+                    metrics.HandlerFinished(startedAt, notificationType, pipeline.HandlerType, "cancelled");
                     deadLettersKeeper.Record(message, ex, attempt, pipeline.HandlerType);
                     return;
                 }
                 catch (Exception ex)
                 {
+                    metrics.HandlerFinished(startedAt, notificationType, pipeline.HandlerType, "failure");
                     if (attempt > policy.MaxRetryAttempts || !policy.IsRetryable(ex))
                     {
                         await DeadLetterAsync(wrapper, serviceProvider, message, ex, attempt, pipeline.HandlerType, stoppingToken).ConfigureAwait(false);
                         return;
                     }
 
+                    metrics.HandlerRetried(notificationType, pipeline.HandlerType);
                     _slots.Release();
                     slotHeld = false;
                     try

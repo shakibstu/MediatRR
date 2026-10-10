@@ -407,6 +407,26 @@ public class StreamLoggingBehavior<TRequest, TResponse> : IStreamBehavior<TReque
 services.AddTransient(typeof(IStreamBehavior<,>), typeof(StreamLoggingBehavior<,>));
 ```
 
+## Metrics
+
+MediatRR emits metrics through `System.Diagnostics.Metrics` on a meter named `MediatRR` (`MediatRRInstrumentation.MeterName`). If an `IMeterFactory` is registered, for example by `services.AddMetrics()` or OpenTelemetry, the meter is created through it. Otherwise MediatRR creates its own.
+
+| Instrument | Kind | Tags | Meaning |
+|---|---|---|---|
+| `mediatrr.notifications.published` | counter | `notification.type` | Notifications accepted by `Publish` and queued for the worker |
+| `mediatrr.notifications.queued` | observable gauge | | Notifications waiting in the channel. Growth here means handlers cannot keep up |
+| `mediatrr.handlers.in_flight` | up-down counter | | Handler attempts currently running |
+| `mediatrr.handlers.duration` | histogram (ms) | `notification.type`, `handler.type`, `outcome` | Duration of one handler attempt. `outcome` is `success`, `failure` or `cancelled` |
+| `mediatrr.handlers.retries` | counter | `notification.type`, `handler.type` | Failed attempts that are retried |
+| `mediatrr.dead_letters` | counter | `notification.type`, `handler.type` | Entries written to the dead letter queue. `handler.type` is omitted when no handler ran |
+
+With OpenTelemetry:
+
+```csharp
+builder.Services.AddOpenTelemetry()
+    .WithMetrics(metrics => metrics.AddMeter(MediatRRInstrumentation.MeterName));
+```
+
 ## ASP.NET Core Integration
 
 In an ASP.NET Core application, register MediatRR in your `Program.cs` or `Startup.cs`:

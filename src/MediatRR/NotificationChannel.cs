@@ -29,6 +29,8 @@ internal sealed class NotificationChannel
 
     public bool TryRead(out NotificationPublishContext context) => _channel.Reader.TryRead(out context);
 
+    public int Count => _channel.Reader.CanCount ? _channel.Reader.Count : 0;
+
     /// <summary>
     /// Stops the channel from accepting new notifications.
     /// Idempotent — safe to call multiple times.

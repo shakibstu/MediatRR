@@ -21,10 +21,11 @@ public static class MediatRRServiceProviderExtension
         configuration?.Invoke(serviceConfig);
         Validate(serviceConfig);
 
-        services.TryAddSingleton(new InternalDeadLettersKeeper(deadLetters));
+        services.TryAddSingleton(provider => new InternalDeadLettersKeeper(deadLetters, provider.GetRequiredService<MediatRRMetrics>()));
         services.TryAddSingleton(serviceConfig);
         services.TryAddTransient<IMediator, Mediator>();
         services.TryAddSingleton<NotificationChannel>();
+        services.TryAddSingleton<MediatRRMetrics>();
         services.TryAddSingleton<NotificationResiliencyProvider>();
         services.AddHostedService<HandleNotificationsWorker>();
         return services;
