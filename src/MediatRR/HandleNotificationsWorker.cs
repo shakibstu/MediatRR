@@ -22,7 +22,10 @@ internal sealed class HandleNotificationsWorker(
     IServiceScopeFactory scopeFactory) : BackgroundService
 {
     private readonly SemaphoreSlim _slots = new(configuration.MaxConcurrentMessageConsumer);
+    private readonly SemaphoreSlim _orderedBacklog = new(configuration.NotificationChannelSize);
     private readonly List<Task> _inFlight = new();
+    private readonly Dictionary<string, Task> _orderedTails = new();
+    private readonly object _orderedLock = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -44,8 +47,24 @@ internal sealed class HandleNotificationsWorker(
                     break;
                 }
 
-                var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 _inFlight.RemoveAll(static task => task.IsCompleted);
+                if ((context.Message as IOrderedNotification)?.OrderingKey is { } orderingKey)
+                {
+                    try
+                    {
+                        await _orderedBacklog.WaitAsync(stoppingToken).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException ex)
+                    {
+                        deadLettersKeeper.Record(context.Message, ex, 0);
+                        break;
+                    }
+
+                    _inFlight.Add(ProcessOrderedAsync(orderingKey, context, stoppingToken));
+                    continue;
+                }
+
+                var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
                 _inFlight.Add(ProcessMessageAsync(context, started, stoppingToken));
                 await started.Task.ConfigureAwait(false);
             }
@@ -66,6 +85,46 @@ internal sealed class HandleNotificationsWorker(
         }
 
         await base.StopAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task ProcessOrderedAsync(string orderingKey, NotificationPublishContext context, CancellationToken stoppingToken)
+    {
+        var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task previous;
+        lock (_orderedLock)
+        {
+            _orderedTails.TryGetValue(orderingKey, out previous);
+            _orderedTails[orderingKey] = done.Task;
+        }
+
+        return RunOrderedAsync(previous, done, orderingKey, context, stoppingToken);
+    }
+
+    private async Task RunOrderedAsync(Task previous, TaskCompletionSource<bool> done, string orderingKey, NotificationPublishContext context, CancellationToken stoppingToken)
+    {
+        try
+        {
+            if (previous is not null)
+            {
+                await previous.ConfigureAwait(false);
+            }
+
+            var started = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await ProcessMessageAsync(context, started, stoppingToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            lock (_orderedLock)
+            {
+                if (_orderedTails.TryGetValue(orderingKey, out var tail) && ReferenceEquals(tail, done.Task))
+                {
+                    _orderedTails.Remove(orderingKey);
+                }
+            }
+
+            done.TrySetResult(true);
+            _orderedBacklog.Release();
+        }
     }
 
     private async Task ProcessMessageAsync(NotificationPublishContext context, TaskCompletionSource<bool> started, CancellationToken stoppingToken)

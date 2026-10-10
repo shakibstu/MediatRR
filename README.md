@@ -303,6 +303,23 @@ Rules:
 - It also runs when handler resolution fails before any handler executes; `HandlerType` is `null` and `AttemptCount` is `0` in that case.
 - During shutdown, notifications that are cancelled in flight or never read from the channel go to the queue only. Dead letter handlers are not invoked once the host is stopping.
 
+### Ordered Notifications
+
+By default every notification is handled as soon as a concurrency slot is free, so two notifications published back to back may be handled in either order. When order matters within a group, for example all events of one account, implement `IOrderedNotification` instead of `INotification`:
+
+```csharp
+public class BalanceChanged : IOrderedNotification
+{
+    public string AccountId { get; set; }
+    public decimal NewBalance { get; set; }
+    public string OrderingKey => AccountId;
+}
+```
+
+Notifications with the same `OrderingKey` are handled strictly in publish order: the next one starts only after every handler of the previous one has finished, retries included. Notifications with different keys are handled concurrently, as are plain notifications. A `null` key opts that notification out of ordering.
+
+Ordered notifications are taken off the channel ahead of time so that other keys are not held up. At most `NotificationChannelSize` of them wait for their key in memory; beyond that `Publish` waits, the same way it does when the channel is full.
+
 ### Publishing Notifications
 
 Use the `Publish` method to send notifications to all registered handlers:
