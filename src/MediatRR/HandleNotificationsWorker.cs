@@ -1,3 +1,4 @@
+using MediatRR.Contract.Messaging;
 using MediatRR.Dispatch;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -72,19 +73,21 @@ internal sealed class HandleNotificationsWorker(
         var handlerTasks = new List<Task>();
         try
         {
+            NotificationWrapper wrapper = null;
             try
             {
-                var pipelines = WrapperCache.ForNotification(context.Type).BuildHandlerPipelines(scope.ServiceProvider, context.Message);
+                wrapper = WrapperCache.ForNotification(context.Type);
+                var pipelines = wrapper.BuildHandlerPipelines(scope.ServiceProvider, context.Message);
                 var policy = resiliencyProvider.GetResiliencyPolicy(context.Type);
                 foreach (var pipeline in pipelines)
                 {
                     await _slots.WaitAsync(stoppingToken).ConfigureAwait(false);
-                    handlerTasks.Add(RunWithRetryAsync(pipeline, context.Message, policy, stoppingToken));
+                    handlerTasks.Add(RunWithRetryAsync(wrapper, scope.ServiceProvider, pipeline, context.Message, policy, stoppingToken));
                 }
             }
             catch (Exception ex)
             {
-                deadLettersKeeper.Record(context.Message, ex, 0);
+                handlerTasks.Add(DeadLetterAsync(wrapper, scope.ServiceProvider, context.Message, ex, 0, null, stoppingToken));
             }
             finally
             {
@@ -99,7 +102,7 @@ internal sealed class HandleNotificationsWorker(
         }
     }
 
-    private async Task RunWithRetryAsync(Func<CancellationToken, Task> pipeline, object message, NotificationRetryPolicy policy, CancellationToken stoppingToken)
+    private async Task RunWithRetryAsync(NotificationWrapper wrapper, IServiceProvider serviceProvider, HandlerPipeline pipeline, INotification message, NotificationRetryPolicy policy, CancellationToken stoppingToken)
     {
         var slotHeld = true;
         var attempt = 1;
@@ -109,19 +112,19 @@ internal sealed class HandleNotificationsWorker(
             {
                 try
                 {
-                    await pipeline(stoppingToken).ConfigureAwait(false);
+                    await pipeline.Invoke(stoppingToken).ConfigureAwait(false);
                     return;
                 }
                 catch (OperationCanceledException ex) when (stoppingToken.IsCancellationRequested)
                 {
-                    deadLettersKeeper.Record(message, ex, attempt);
+                    deadLettersKeeper.Record(message, ex, attempt, pipeline.HandlerType);
                     return;
                 }
                 catch (Exception ex)
                 {
                     if (attempt > policy.MaxRetryAttempts)
                     {
-                        deadLettersKeeper.Record(message, ex, attempt);
+                        await DeadLetterAsync(wrapper, serviceProvider, message, ex, attempt, pipeline.HandlerType, stoppingToken).ConfigureAwait(false);
                         return;
                     }
 
@@ -139,7 +142,7 @@ internal sealed class HandleNotificationsWorker(
                     }
                     catch (OperationCanceledException)
                     {
-                        deadLettersKeeper.Record(message, ex, attempt);
+                        deadLettersKeeper.Record(message, ex, attempt, pipeline.HandlerType);
                         return;
                     }
 
@@ -152,6 +155,38 @@ internal sealed class HandleNotificationsWorker(
             if (slotHeld)
             {
                 _slots.Release();
+            }
+        }
+    }
+
+    private async Task DeadLetterAsync(NotificationWrapper wrapper, IServiceProvider serviceProvider, INotification message, Exception exception, int attempt, Type handlerType, CancellationToken stoppingToken)
+    {
+        var deadLetter = deadLettersKeeper.Record(message, exception, attempt, handlerType);
+        if (wrapper is null || stoppingToken.IsCancellationRequested)
+        {
+            return;
+        }
+
+        IReadOnlyList<HandlerPipeline> pipelines;
+        try
+        {
+            pipelines = wrapper.BuildDeadLetterPipelines(serviceProvider, message, deadLetter);
+        }
+        catch (Exception ex)
+        {
+            deadLettersKeeper.Record(message, ex, 0);
+            return;
+        }
+
+        foreach (var pipeline in pipelines)
+        {
+            try
+            {
+                await pipeline.Invoke(stoppingToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                deadLettersKeeper.Record(message, ex, 1, pipeline.HandlerType);
             }
         }
     }

@@ -16,6 +16,10 @@ internal sealed class InternalDeadLettersKeeper
 
     public ConcurrentQueue<DeadLettersInfo> DeadLettersQueue { get; }
 
-    public void Record(object message, Exception exception, int attemptCount) =>
-        DeadLettersQueue.Enqueue(new DeadLettersInfo(message, exception, attemptCount, DateTime.UtcNow));
+    public DeadLettersInfo Record(object message, Exception exception, int attemptCount, Type handlerType = null)
+    {
+        var info = new DeadLettersInfo(message, exception, attemptCount, DateTime.UtcNow, handlerType);
+        DeadLettersQueue.Enqueue(info);
+        return info;
+    }
 }

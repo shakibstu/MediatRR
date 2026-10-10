@@ -55,6 +55,19 @@ public static class MediatRRServiceProviderExtension
         return services;
     }
 
+    /// <summary>
+    /// Registers a handler that runs when a notification of type <typeparamref name="T"/> is dead-lettered.
+    /// The dead letter queue passed to <see cref="AddMediatRR"/> still records every entry.
+    /// </summary>
+    public static IServiceCollection AddDeadLetterHandler<T, THandler>(this IServiceCollection services)
+        where THandler : class, IDeadLetterHandler<T> where T : INotification
+    {
+        if (services is null) throw new ArgumentNullException(nameof(services));
+
+        services.AddTransient<IDeadLetterHandler<T>, THandler>();
+        return services;
+    }
+
     public static IServiceCollection AddRequestHandler<T, TResponse, THandler>(this IServiceCollection services)
         where THandler : class, IRequestHandler<T, TResponse> where T : IRequest<TResponse>
     {

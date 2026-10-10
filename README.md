@@ -75,7 +75,9 @@ The `deadLetters` parameter is a `ConcurrentQueue<DeadLettersInfo>` that collect
 - Analyze patterns in notification failures
 - Ensure no notifications are silently lost
 
-Each `DeadLettersInfo` entry contains the failed notification, the exception, `AttemptCount` (the total number of times the handler was attempted, including retries) and the UTC time of the last attempt. Entries are also written for notifications abandoned during a forced shutdown, with an `OperationCanceledException`, so nothing is silently lost.
+Each `DeadLettersInfo` entry contains the failed notification, the exception, `AttemptCount` (the total number of times the handler was attempted, including retries), `HandlerType` (the handler that failed, or `null` when the failure happened before any handler ran) and the UTC time of the last attempt. Entries are also written for notifications abandoned during a forced shutdown, with an `OperationCanceledException`, so nothing is silently lost.
+
+For a typed, push-based alternative to polling the queue, see [Dead Letter Handlers](#dead-letter-handlers). The queue keeps recording every entry whether or not a handler is registered.
 
 ## Basic Usage
 
@@ -254,6 +256,32 @@ services.AddNotificationHandler<OrderPlaced, AuditHandler>();
 ### Retries
 
 A failing handler is retried in place: after `DelayBetweenRetries` the same handler runs again, up to `MaxRetryAttempts` times. Other handlers of the same notification are not re-run. An exception thrown by an `INotificationHandlerBehavior` is retried the same way. After the last attempt the notification is dead-lettered together with the last exception.
+
+### Dead Letter Handlers
+
+Implement `IDeadLetterHandler<TNotification>` to be called when a notification of that type is dead-lettered. The handler receives a `DeadLetter<TNotification>` with the typed notification, the exception, `AttemptCount`, `HandlerType` and `LastAttemptedAt`:
+
+```csharp
+public class OrderPlacedDeadLetterHandler : IDeadLetterHandler<OrderPlaced>
+{
+    public Task Handle(DeadLetter<OrderPlaced> deadLetter, CancellationToken cancellationToken)
+    {
+        Console.WriteLine($"Order {deadLetter.Notification.OrderId} failed in {deadLetter.HandlerType?.Name} after {deadLetter.AttemptCount} attempts: {deadLetter.Exception.Message}");
+        return Task.CompletedTask;
+    }
+}
+
+services.AddDeadLetterHandler<OrderPlaced, OrderPlacedDeadLetterHandler>();
+```
+
+Rules:
+
+- The dead letter queue passed to `AddMediatRR` still records every entry, so existing code keeps working unchanged.
+- A dead letter handler runs in the same DI scope as the handler that failed, so scoped services are shared.
+- It is called once per failed handler. Several dead letter handlers for the same notification type all run, one after the other.
+- It is never retried. If it throws, a second queue entry is written whose `HandlerType` is the dead letter handler's type and whose exception is the one it threw.
+- It also runs when handler resolution fails before any handler executes; `HandlerType` is `null` and `AttemptCount` is `0` in that case.
+- During shutdown, notifications that are cancelled in flight or never read from the channel go to the queue only. Dead letter handlers are not invoked once the host is stopping.
 
 ### Publishing Notifications
 

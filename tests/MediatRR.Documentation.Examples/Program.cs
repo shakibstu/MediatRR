@@ -13,6 +13,7 @@ namespace MediatRR.Documentation.Examples
             await Features.LoggingBehaviorRunner.Run();
             await Features.NotificationRunner.Run();
             await Features.NotificationBehaviorRunner.Run();
+            await Features.DeadLetterHandlerRunner.Run();
 
             Console.WriteLine("\nDone.");
         }
